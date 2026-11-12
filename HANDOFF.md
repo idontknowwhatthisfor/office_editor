@@ -10,8 +10,8 @@ build commands, rules from the PRD); this file is the state of the work and what
 | M0 Skeleton | Done, verified on the phone. |
 | M1 PDF viewer | Working on the phone: scroll, pinch-zoom, text selection, search, thumbnails. Tested on generated samples, one Word-exported PDF and a 700 MB / 1,191-page textbook. |
 | M2 DOCX viewer | Working on the phone in Word-style page layout. Tested on one real Word file (`test-files/FallSafe_Essay_v5-2.docx`) and two synthetic ones. |
-| M3 XLSX viewer | Working on the phone (session 2): tabs, frozen panes, formats, merges, tap a cell to see its formula. Tested only on Excel-generated samples; **real files from the owner still needed.** Pinch-zoom not yet confirmed by a real finger. |
-| M4 PPTX viewer | **Next.** Not started; `.pptx` opens to a "can't be viewed yet" message (`web/src/placeholder.ts`). |
+| M3 XLSX viewer | Done; the owner checked it on the phone (session 2). |
+| M4 PPTX viewer | Working on the phone (session 2): text, shapes, pictures, tables, groups, backgrounds; swipe, thumbnails, double-tap/pinch zoom. Compared slide by slide with PowerPoint's own PDF of two decks. **Needs the owner's check and real decks.** |
 | M5–M8 | Not started. |
 
 Commits on `main`, nothing pushed (no remote).
@@ -24,12 +24,11 @@ Commits on `main`, nothing pushed (no remote).
   debug. They follow along in short messages and unlock the phone when asked.
 - Global instruction: run `./gradlew --stop` after Gradle builds (8 GB Mac).
 
-## Next: confirm M3, then M4 (PPTX viewer)
+## Next
 
-- Ask the owner for real Excel files and to pinch-zoom a sheet on the phone. CDP's
-  `Input.synthesizePinchGesture` delivers only touchstart + two touchmoves to this page (no
-  touchend), so it can't test the grid's own pinch handling.
-- M4 per PRD §4.5: slides with text, shapes, images; swipe, thumbnails, pinch-zoom.
+- Owner checks M4 on the phone (pinch-zoom by finger, real decks). Every viewer is in place, so
+  the PRD's "first usable viewer build" is reached once that passes.
+- Then M5 (PDF annotate, fill and sign) per PRD §8.
 
 ## Open items
 
@@ -58,6 +57,20 @@ Commits on `main`, nothing pushed (no remote).
   notice belongs to M6.
 - The comparison against Excel (`excel_text_dump.applescript`, then the formats in a browser
   console) matched 9,082 of 9,087 cells; the rest are the Mac's Indonesian time separator.
+
+**PPTX viewer** (`web/src/pptx/`)
+- Not drawn: charts (placeholder + notice; their cached values are in `ppt/charts/*.xml`, so a
+  simple bar/line/pie renderer is feasible), SmartArt without a saved drawing, EMF/WMF/TIFF
+  pictures, video/audio (poster frame only), 3-D, most effects (only outer shadows), speaker
+  notes (PRD P1), transitions.
+- Built-in table styles other than the default ("Medium Style 2 – Accent 1") are drawn as that
+  one: files store only their id.
+- About 50 common preset shapes are drawn exactly; cloud shapes are approximated; others fall
+  back to a rectangle (`geometry.ts`). Custom shapes with computed guides draw with them as 0.
+- Text is laid out by the browser, so line breaks differ slightly from PowerPoint, and Aptos
+  (Office's current default font) falls back to the system sans-serif.
+- Rendering is lazy (current slide ±2, thumbnails as they scroll in); ~40–70 ms per slide on
+  the phone for the samples. Not tried on a deck with hundreds of slides or large photos.
 
 **PDF viewer** (`web/src/pdf/`)
 - Memory grows as a large PDF is read: PDF.js keeps every range it has loaded. Not measured to
@@ -106,6 +119,9 @@ Commits on `main`, nothing pushed (no remote).
 sheet, hidden rows/columns without gridlines) and `excel-5000-rows.xlsx` were made by Mac Excel
 via `make_xlsx_samples.applescript` (Excel's locale here is Indonesian, so currency is "Rp").
 Both are on the phone in `Download/officeeditor-test/` (MediaStore ids 2130, 2131).
+`pptx-sample.pptx` (python-pptx deck re-saved by PowerPoint: bullets, shapes, picture, table,
+group, chart, dark background) and `pptx-native.pptx` (made in PowerPoint, default theme) have
+PowerPoint's PDFs beside them; on the phone as ids 2132, 2133.
 
 `test-files/` is git-ignored apart from `make_samples.py` (run it to regenerate the synthetic
 PDFs and DOCX). The owner's essay (`FallSafe_Essay_v5-2.docx`) is there; Word's PDF export of it

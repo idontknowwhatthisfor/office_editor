@@ -23,3 +23,6 @@ test-files/*
 !test-files/make_samples.py
 !test-files/make_xlsx_samples.applescript
 !test-files/excel_text_dump.applescript
+!test-files/make_pptx_sample.py
+!test-files/pptx_resave.applescript
+!test-files/make_pptx_native.applescript

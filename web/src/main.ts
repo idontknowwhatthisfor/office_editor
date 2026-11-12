@@ -34,8 +34,8 @@ async function open(info: DocInfo, load: () => Promise<ArrayBuffer>): Promise<vo
     const { openXlsx } = await import('./xlsx/viewer');
     await openXlsx(app, data);
   } else {
-    const { showNotYetSupported } = await import('./placeholder');
-    showNotYetSupported(app, info, data);
+    const { openPptx } = await import('./pptx/viewer');
+    await openPptx(app, data);
   }
 }
 

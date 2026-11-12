@@ -1,0 +1,235 @@
+/* Presentation viewer (viewer.ts) and the slide markup from render.ts. */
+
+.pptx {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  --pptx-accent: #c43e1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pptx {
+    --pptx-accent: #ff8a65;
+  }
+}
+
+/* One slide per screen width; swiping snaps to the next. */
+.pptx-pager {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior: none;
+  scrollbar-width: none;
+  touch-action: pan-x pan-y;
+}
+
+/* While a slide is zoomed in, one-finger drags pan it instead of turning the page. */
+.pptx-pager.locked {
+  overflow-x: hidden;
+}
+
+.pptx-page {
+  /* Positioned, so the slide's offsetLeft/Top (used to zoom around a point) are page-relative. */
+  position: relative;
+  flex: 0 0 100%;
+  display: flex;
+  overflow: hidden;
+  padding: 8px;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+
+.pptx-page.zoomed {
+  overflow: auto;
+}
+
+.pptx-sizer {
+  position: relative;
+  flex: none;
+  margin: auto;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+}
+
+.pptx-failed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.pptx-count {
+  position: absolute;
+  right: 12px;
+  bottom: calc(54px + 24px + 8px);
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-size: 13px;
+  line-height: 20px;
+  pointer-events: none;
+}
+
+.pptx-strip {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  touch-action: pan-x;
+}
+
+.pptx-thumb {
+  position: relative;
+  flex: none;
+  padding: 0;
+  border: 0;
+  outline: 1px solid var(--border);
+  background: #fff;
+  overflow: hidden;
+}
+
+.pptx-thumb[aria-current='true'] {
+  outline: 3px solid var(--pptx-accent);
+}
+
+.pptx-thumb .slide {
+  pointer-events: none;
+}
+
+.pptx-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  background: #fff4ce;
+  color: #5c4400;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.pptx-notice[hidden] {
+  display: none;
+}
+
+.pptx-notice span {
+  flex: 1;
+}
+
+.pptx-notice-close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 22px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pptx-notice {
+    background: #3d3420;
+    color: #f3e2b3;
+  }
+}
+
+/* ------------------------------------------------------------ slide markup */
+
+.slide {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  background: #fff;
+  color: #000;
+  color-scheme: only light;
+  transform-origin: 0 0;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+  -webkit-user-select: none;
+  user-select: none;
+  line-height: 1.2;
+}
+
+.slide .sp,
+.slide .grp,
+.slide .tbl {
+  position: absolute;
+}
+
+.slide .sp > svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+
+.slide .pic {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.slide .pic > img {
+  position: absolute;
+  max-width: none;
+}
+
+.slide .missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #9aa0a6;
+  background: rgb(240 241 243 / 0.85);
+  font-size: 32px;
+}
+
+/* A text body: the shape's box less its insets; the paragraphs are anchored top, middle or
+   bottom. Overflowing text stays visible, as in PowerPoint. */
+.slide .tx {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.slide .tx > p {
+  margin: 0;
+}
+
+.slide .tx .bu {
+  display: inline-block;
+  text-indent: 0;
+  padding-right: 0.25em;
+}
+
+.slide .tbl {
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.slide .tbl td {
+  padding: 0;
+  overflow: hidden;
+}
+
+.slide .tx.cell {
+  position: static;
+  width: auto !important;
+  height: auto !important;
+}

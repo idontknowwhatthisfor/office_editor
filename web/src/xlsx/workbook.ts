@@ -1,4 +1,4 @@
-import JSZip from 'jszip';
+import { Package, all, child, children, first, relAttr } from '../ooxml';
 import { formatCode } from './format';
 
 // Reads what a viewer needs from an XLSX file: cell values as Excel last computed them (cached
@@ -107,13 +107,13 @@ export class Workbook {
   /** Excel's "maximum digit width" of the default font in px: the unit of column widths. */
   digitWidth = 7;
   defaultFont!: Font;
-  private zip!: JSZip;
+  private pkg!: Package;
   private strings: (string | Run[])[] = [];
   private loaded = new Map<number, Promise<Sheet>>();
 
   static async open(data: ArrayBuffer): Promise<Workbook> {
     const book = new Workbook();
-    book.zip = await JSZip.loadAsync(data);
+    book.pkg = await Package.open(data);
     await book.readWorkbook();
     return book;
   }
@@ -127,28 +127,12 @@ export class Workbook {
     return sheet;
   }
 
-  private async xml(path: string): Promise<Document | null> {
-    const file = this.zip.file(path);
-    if (!file) return null;
-    const doc = new DOMParser().parseFromString(await file.async('string'), 'application/xml');
-    if (doc.getElementsByTagName('parsererror').length) throw new Error(`bad XML in ${path}`);
-    return doc;
+  private xml(path: string): Promise<Document | null> {
+    return this.pkg.xml(path);
   }
 
-  /** Relationship id → target path, for the part at `path`. */
-  private async rels(path: string): Promise<Map<string, { target: string; type: string }>> {
-    const slash = path.lastIndexOf('/');
-    const dir = path.slice(0, slash + 1);
-    const doc = await this.xml(`${dir}_rels/${path.slice(slash + 1)}.rels`);
-    const out = new Map<string, { target: string; type: string }>();
-    for (const rel of all(doc, 'Relationship')) {
-      if (rel.getAttribute('TargetMode') === 'External') continue;
-      out.set(rel.getAttribute('Id') ?? '', {
-        target: resolvePath(dir, rel.getAttribute('Target') ?? ''),
-        type: rel.getAttribute('Type') ?? '',
-      });
-    }
-    return out;
+  private async rels(path: string) {
+    return new Map([...(await this.pkg.rels(path))].filter(([, rel]) => !rel.external));
   }
 
   private async readWorkbook(): Promise<void> {
@@ -163,7 +147,7 @@ export class Workbook {
     this.date1904 = /^(1|true)$/.test(pr?.getAttribute('date1904') ?? '');
 
     for (const el of all(book, 'sheet')) {
-      const rel = rels.get(relId(el));
+      const rel = rels.get(relAttr(el));
       if (!rel) continue;
       const kind = rel.type.endsWith('/worksheet') ? 'worksheet'
         : rel.type.endsWith('/chartsheet') ? 'chart'
@@ -406,42 +390,6 @@ function setText(cell: Cell, value: string | Run[]): void {
 }
 
 // ------------------------------------------------------------------ XML helpers
-
-function all(root: Document | Element | null | undefined, name: string): Element[] {
-  return root ? [...root.getElementsByTagNameNS('*', name)] : [];
-}
-
-function first(root: Document | Element | null | undefined, name: string): Element | null {
-  return root ? root.getElementsByTagNameNS('*', name)[0] ?? null : null;
-}
-
-function child(el: Element | null | undefined, name: string): Element | null {
-  if (!el || !name) return null;
-  for (const c of el.children) if (c.localName === name) return c;
-  return null;
-}
-
-function children(el: Element | null | undefined, name: string): Element[] {
-  return el ? [...el.children].filter((c) => c.localName === name) : [];
-}
-
-/** `r:id` whatever the prefix. */
-function relId(el: Element): string {
-  for (const attr of el.attributes) {
-    if (attr.localName === 'id' && attr.namespaceURI?.includes('relationships')) return attr.value;
-  }
-  return '';
-}
-
-function resolvePath(dir: string, target: string): string {
-  const parts = (target.startsWith('/') ? target.slice(1) : dir + target).split('/');
-  const out: string[] = [];
-  for (const p of parts) {
-    if (p === '..') out.pop();
-    else if (p && p !== '.') out.push(p);
-  }
-  return out.join('/');
-}
 
 /** Excel escapes control characters in text as _xHHHH_. */
 function unescapeText(s: string): string {

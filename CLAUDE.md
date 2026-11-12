@@ -34,11 +34,20 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     SheetJS CE was not used (its npm build is stale and reads no styles), nor ExcelJS (large,
     needs Node polyfills). Column widths use Excel's digit width of the default font
     (`DIGIT_RATIO`), checked against Mac Excel.
-  - `src/placeholder.ts` — stand-in for PPTX until M4.
+  - `src/pptx/` — read-only presentation viewer, drawn by our own code (pptx-preview, the PRD's
+    candidate, ships only minified code with no source or licence file). `deck.ts` loads
+    slide → layout → master → theme; `render.ts` draws a slide as HTML (shapes as SVG outlines
+    from `geometry.ts`, text as HTML from `text.ts`, tables from `table.ts`), following
+    placeholder inheritance and theme style references (`p:style`). `viewer.ts`: one slide per
+    screen with scroll-snap, thumbnails, its own pinch/double-tap zoom. Charts, and SmartArt
+    without a saved drawing, show a placeholder and a notice.
+  - `src/ooxml.ts` — zip/XML/relationship helpers shared by the XLSX and PPTX readers.
 - `test-files/` — sample documents; `make_samples.py` regenerates the synthetic ones.
   `make_xlsx_samples.applescript` builds XLSX samples with Microsoft Excel itself (installed on
   this Mac); `excel_text_dump.applescript` prints the text Excel displays per cell, to compare
-  with the viewer's formatting.
+  with the viewer's formatting. `make_pptx_sample.py` (python-pptx) + `pptx_resave.applescript`
+  and `make_pptx_native.applescript` make decks that PowerPoint has saved, plus PowerPoint's PDF
+  of each as the reference rendering. PowerPoint asks once for access to `test-files/`.
 
 **How bytes reach the viewer:** not through the bridge. The document is served at
 `https://appassets.androidplatform.net/doc/current` and the page `fetch()`es it. The bridge only
