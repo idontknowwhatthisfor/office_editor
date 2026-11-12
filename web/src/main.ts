@@ -7,6 +7,14 @@ const app = document.getElementById('app')!;
 
 async function open(info: DocInfo, load: () => Promise<ArrayBuffer>): Promise<void> {
   showMessage(app, t('opening'));
+  // Each format's viewer is its own chunk, so opening a PDF never loads spreadsheet code.
+  if (info.format === 'pdf' && info.url) {
+    // PDFs can be huge; the viewer reads the file from its URL in pieces, as pages are needed.
+    console.log(`opening pdf document from ${info.url}, ${info.size} bytes`);
+    const { openPdf } = await import('./pdf/viewer');
+    await openPdf(app, { url: info.url });
+    return;
+  }
   let data: ArrayBuffer;
   try {
     data = await load();
@@ -16,10 +24,9 @@ async function open(info: DocInfo, load: () => Promise<ArrayBuffer>): Promise<vo
     return;
   }
   console.log(`opened ${info.format} document, ${data.byteLength} bytes`);
-  // Each format's viewer is its own chunk, so opening a PDF never loads spreadsheet code.
   if (info.format === 'pdf') {
     const { openPdf } = await import('./pdf/viewer');
-    await openPdf(app, data);
+    await openPdf(app, { data });
   } else if (info.format === 'docx') {
     const { openDocx } = await import('./docx/viewer');
     await openDocx(app, data);

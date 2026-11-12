@@ -71,12 +71,15 @@ function splitBlock(block: HTMLElement, limit: number): HTMLElement | null {
 function splitTable(table: HTMLTableElement, limit: number): HTMLElement | null {
   const rows = [...table.rows];
   const index = rows.findIndex((r) => r.getBoundingClientRect().bottom > limit + 0.5);
-  if (index <= 0) return null;
+  // Header rows (marked break-after: avoid by the viewer) lead the table and repeat on each page.
+  let headers = 0;
+  while (headers < rows.length && rows[headers].style.breakAfter === 'avoid') headers++;
+  if (index <= headers) return null; // no body row fits: the whole table moves
   const rest = table.cloneNode(false) as HTMLTableElement;
   const columns = table.querySelector(':scope > colgroup');
   if (columns) rest.append(columns.cloneNode(true));
   const body = document.createElement('tbody');
-  body.append(...rows.slice(index));
+  body.append(...rows.slice(0, headers).map((row) => row.cloneNode(true)), ...rows.slice(index));
   rest.append(body);
   table.after(rest);
   return rest;

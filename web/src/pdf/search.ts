@@ -67,29 +67,36 @@ export class PdfSearch {
 
     const escaped = this.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
     const pattern = new RegExp(escaped, 'giu');
+    // Search from the page being read to the end, then wrap to the start: in a long document
+    // the nearest result shows up at once instead of after everything before it was read.
+    const count = this.host.pageCount;
     const startPage = this.host.currentPage();
-
-    for (let page = 0; page < this.host.pageCount; page++) {
+    let wrapped = 0; // matches found on pages before startPage; they sort ahead of the others
+    for (let step = 0; step < count; step++) {
+      const page = (startPage + step) % count;
       const { text } = await this.pageIndex(page);
       if (run !== this.run) return;
-      let found = false;
+      const found: Match[] = [];
       for (const m of text.matchAll(pattern)) {
-        if (m[0].length === 0) continue;
-        this.matches.push({ page, start: m.index, end: m.index + m[0].length });
-        found = true;
+        if (m[0].length > 0) found.push({ page, start: m.index, end: m.index + m[0].length });
       }
-      if (!found) continue;
-      // Select the first match at or after the page being read, as soon as it is known.
-      if (this.current === -1 && page >= startPage) {
-        void this.select(this.matches.findIndex((m) => m.page === page));
+      if (found.length === 0) continue;
+      if (page >= startPage) {
+        this.matches.push(...found);
+      } else {
+        this.matches.splice(wrapped, 0, ...found);
+        wrapped += found.length;
+        if (this.current >= 0) this.current += found.length;
+      }
+      if (this.current === -1) {
+        void this.select(this.matches.indexOf(found[0]));
       } else {
         this.decorate(page);
         this.notify();
       }
     }
     this.searching = false;
-    if (this.current === -1 && this.matches.length > 0) void this.select(0);
-    else this.notify();
+    this.notify();
   }
 
   /** Moves to the next (1) or previous (-1) match, wrapping around. */
@@ -116,7 +123,8 @@ export class PdfSearch {
     this.notify();
     if (previous && previous.page !== match.page) this.decorate(previous.page);
     await this.host.reveal(match.page);
-    if (run !== this.run || this.current !== index) return;
+    // Compare the match, not the index: results found meanwhile can shift the indexes.
+    if (run !== this.run || this.matches[this.current] !== match) return;
     this.decorate(match.page);
     const div = this.host.textDivs(match.page)?.find((d) => d.querySelector('mark.sel'));
     div?.querySelector('mark.sel')?.scrollIntoView({ block: 'center', inline: 'nearest' });

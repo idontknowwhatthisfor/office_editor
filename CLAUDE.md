@@ -29,9 +29,12 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
   - `src/placeholder.ts` — stand-in for XLSX/PPTX until M3–M4.
 - `test-files/` — sample documents; `make_samples.py` regenerates the synthetic ones.
 
-**How bytes reach the viewer:** not through the bridge. `WebViewAssetLoader` serves the document
-as a stream at `https://appassets.androidplatform.net/doc/current` and the page `fetch()`es it.
-The bridge only returns metadata (`getDocument()` → `{name, format, mime, size, url}`).
+**How bytes reach the viewer:** not through the bridge. The document is served at
+`https://appassets.androidplatform.net/doc/current` and the page `fetch()`es it. The bridge only
+returns metadata (`getDocument()` → `{name, format, mime, size, url}`). The URL honours HTTP
+`Range`, and the PDF viewer reads through it in 256 KB pieces, so large PDFs aren't held in
+memory whole. Quirk: for a Range request the WebView skips to the range start itself but reads
+to the end of the stream it is given; see `EndingAt` in `DocumentWebView.kt`.
 
 ## Rules that come from the PRD
 

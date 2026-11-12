@@ -33,12 +33,23 @@ interface PageView {
   failed?: boolean;
 }
 
-export async function openPdf(root: HTMLElement, data: ArrayBuffer): Promise<void> {
+/** Pages above this count are measured only as they come near the screen (see measureAll). */
+const MEASURE_ALL_LIMIT = 300;
+
+/**
+ * Opens a PDF from a same-origin URL that supports HTTP range requests, or from bytes already in
+ * memory. From a URL only the parts of the file that are needed are read (256 KB at a time), so
+ * a 700 MB book costs little memory until it is read through.
+ */
+export async function openPdf(root: HTMLElement, source: { url: string } | { data: ArrayBuffer }): Promise<void> {
   let pdf: PDFDocumentProxy;
   let first: PDFPageProxy;
   try {
     pdf = await pdfjs.getDocument({
-      data,
+      ...source,
+      rangeChunkSize: 262144,
+      disableAutoFetch: true,
+      disableStream: true,
       cMapUrl: `${assets}cmaps/`,
       standardFontDataUrl: `${assets}standard_fonts/`,
       wasmUrl: `${assets}wasm/`,
@@ -46,7 +57,7 @@ export async function openPdf(root: HTMLElement, data: ArrayBuffer): Promise<voi
     }).promise;
     first = await pdf.getPage(1);
   } catch (e) {
-    console.error('pdf open failed', e);
+    console.error('pdf open failed:', String(e), e);
     const key = e instanceof pdfjs.PasswordException ? 'pdfPassword'
       : e instanceof pdfjs.InvalidPDFException ? 'pdfInvalid'
       : 'loadFailed';
@@ -190,22 +201,29 @@ class PdfViewer {
     window.scrollBy(0, after.top + fraction * after.height);
   }
 
-  /** Pages can differ in size; correct the first-page assumption in the background. */
+  /**
+   * Pages can differ in size; correct the first-page assumption in the background. Not for long
+   * documents: looking at every page would read much of the file. Their pages are measured when
+   * they are about to be rendered instead (measure, from doRender).
+   */
   private async measureAll(): Promise<void> {
-    for (const page of this.pages.slice(1)) {
-      const size = (await this.proxy(page)).getViewport({ scale: 1 });
-      if (Math.abs(size.width - page.width) < 0.5 && Math.abs(size.height - page.height) < 0.5) continue;
-      this.keepPosition(() => {
-        page.width = size.width;
-        page.height = size.height;
-        this.sizePage(page);
-      });
-      if (page.canvas) {
-        // Rendered with the wrong shape; do it again.
-        this.release(page);
-        this.wanted.add(page.index);
-        void this.pump();
-      }
+    if (this.pages.length > MEASURE_ALL_LIMIT) return;
+    for (const page of this.pages.slice(1)) this.measure(page, await this.proxy(page));
+  }
+
+  private measure(page: PageView, proxy: PDFPageProxy): void {
+    const size = proxy.getViewport({ scale: 1 });
+    if (Math.abs(size.width - page.width) < 0.5 && Math.abs(size.height - page.height) < 0.5) return;
+    this.keepPosition(() => {
+      page.width = size.width;
+      page.height = size.height;
+      this.sizePage(page);
+    });
+    if (page.canvas) {
+      // Rendered with the wrong shape; do it again.
+      this.release(page);
+      this.wanted.add(page.index);
+      void this.pump();
     }
   }
 
@@ -287,6 +305,7 @@ class PdfViewer {
   private async doRender(page: PageView): Promise<void> {
     try {
       const proxy = await this.proxy(page);
+      this.measure(page, proxy);
       const scale = this.targetScale(page);
       const viewport = proxy.getViewport({ scale });
       const canvas = document.createElement('canvas');

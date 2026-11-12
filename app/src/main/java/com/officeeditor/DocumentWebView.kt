@@ -3,6 +3,10 @@ package com.officeeditor
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.net.Uri
+import android.os.ParcelFileDescriptor
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
@@ -13,6 +17,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.webkit.WebViewAssetLoader
 import org.json.JSONObject
+import java.io.InputStream
 
 private const val TAG = "OfficeEditorWeb"
 private const val VIEWER_URL = "https://${WebViewAssetLoader.DEFAULT_DOMAIN}/assets/web/index.html"
@@ -22,22 +27,14 @@ private const val DOC_PATH = "/doc/"
  * Creates the WebView that hosts the bundled web viewers and hands it [doc].
  *
  * Everything is served from the app itself through [WebViewAssetLoader]: the viewer code from
- * `assets/web`, and the document's bytes as a stream at `/doc/current`, which the page fetches.
- * Streaming avoids base64-encoding whole files across the JS bridge. Any other URL is refused.
+ * `assets/web`, and the document's bytes at `/doc/current`, which the page fetches (whole, or in
+ * ranges). That avoids base64-encoding whole files across the JS bridge. Any other URL is refused.
  */
 @SuppressLint("SetJavaScriptEnabled")
 fun createDocumentWebView(context: Context, doc: DocumentInfo): WebView {
     val format = requireNotNull(doc.format)
     val assetLoader = WebViewAssetLoader.Builder()
         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
-        .addPathHandler(DOC_PATH) {
-            try {
-                WebResourceResponse(format.mime, null, context.contentResolver.openInputStream(doc.uri))
-            } catch (e: Exception) {
-                Log.w(TAG, "Can't read ${doc.uri}", e)
-                null
-            }
-        }
         .build()
 
     // Debug builds can be inspected from chrome://inspect on a connected computer.
@@ -55,9 +52,16 @@ fun createDocumentWebView(context: Context, doc: DocumentInfo): WebView {
         settings.displayZoomControls = false
 
         webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                assetLoader.shouldInterceptRequest(request.url)
-                    ?: WebResourceResponse("text/plain", "utf-8", 404, "Not found", emptyMap(), null)
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                val url = request.url
+                val response =
+                    if (url.host == WebViewAssetLoader.DEFAULT_DOMAIN && url.path?.startsWith(DOC_PATH) == true) {
+                        serveDocument(context, doc.uri, format.mime, request)
+                    } else {
+                        assetLoader.shouldInterceptRequest(url)
+                    }
+                return response ?: WebResourceResponse("text/plain", "utf-8", 404, "Not found", emptyMap(), null)
+            }
 
             // The viewer is a single page; nothing in a document may navigate away from it.
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = true
@@ -76,6 +80,79 @@ fun createDocumentWebView(context: Context, doc: DocumentInfo): WebView {
         addJavascriptInterface(Bridge(doc, format), "OfficeBridge")
         loadUrl(VIEWER_URL)
     }
+}
+
+/**
+ * Answers a request for the document's bytes. Honours HTTP `Range` requests when the file is
+ * seekable, so a viewer can read a large file piece by piece instead of holding all of it in
+ * memory (the PDF viewer does). Providers that only offer a pipe get the whole stream.
+ */
+private fun serveDocument(context: Context, uri: Uri, mime: String, request: WebResourceRequest): WebResourceResponse? {
+    try {
+        val resolver = context.contentResolver
+        val descriptor = resolver.openFileDescriptor(uri, "r") ?: return null
+        val size = descriptor.statSize
+        val seekable = size >= 0 && try {
+            Os.lseek(descriptor.fileDescriptor, 0, OsConstants.SEEK_CUR)
+            true
+        } catch (e: Exception) {
+            false
+        }
+        if (!seekable) {
+            descriptor.close()
+            return WebResourceResponse(mime, null, resolver.openInputStream(uri))
+        }
+
+        val stream = ParcelFileDescriptor.AutoCloseInputStream(descriptor)
+        val headers = mutableMapOf("Accept-Ranges" to "bytes")
+        val range = request.requestHeaders.entries.firstOrNull { it.key.equals("Range", ignoreCase = true) }?.value
+        val match = range?.let { Regex("bytes=(\\d+)-(\\d*)").matchEntire(it.trim()) }
+        // No Content-Length header: the WebView adds its own.
+        if (match == null) {
+            return WebResourceResponse(mime, null, 200, "OK", headers, stream)
+        }
+        val start = match.groupValues[1].toLong()
+        val end = minOf(match.groupValues[2].toLongOrNull() ?: Long.MAX_VALUE, size - 1)
+        if (start > end) {
+            stream.close()
+            headers["Content-Range"] = "bytes */$size"
+            return WebResourceResponse(mime, null, 416, "Range Not Satisfiable", headers, null)
+        }
+        headers["Content-Range"] = "bytes $start-$end/$size"
+        return WebResourceResponse(mime, null, 206, "Partial Content", headers, EndingAt(stream, end + 1))
+    } catch (e: Exception) {
+        Log.w(TAG, "Can't read $uri", e)
+        return null
+    }
+}
+
+/**
+ * [source] cut off at byte offset [end] of the file, for answering a Range request.
+ *
+ * For a request with a Range header the WebView itself skips to the start of the range (so the
+ * stream must begin at byte 0 of the file, and a stream of just the slice fails), but it then
+ * reads to the end of the stream instead of the end of the range. So the stream ends there.
+ */
+private class EndingAt(private val source: InputStream, private val end: Long) : InputStream() {
+    private var position = 0L
+
+    override fun skip(count: Long): Long = source.skip(count).also { position += it }
+
+    override fun read(): Int {
+        if (position >= end) return -1
+        return source.read().also { if (it >= 0) position++ }
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (position >= end) return -1
+        val count = source.read(buffer, offset, minOf(length.toLong(), end - position).toInt())
+        if (count > 0) position += count
+        return count
+    }
+
+    override fun available(): Int = minOf(end - position, Int.MAX_VALUE.toLong()).toInt()
+
+    override fun close() = source.close()
 }
 
 /** What the web viewers can ask the native shell. Called on a WebView thread, not the UI thread. */

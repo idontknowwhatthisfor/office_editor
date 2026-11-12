@@ -1,6 +1,7 @@
 import './fonts.css';
 import './docx.css';
 import { parseAsync, renderDocument } from 'docx-preview';
+import JSZip from 'jszip';
 import { t } from '../i18n';
 import { showMessage } from '../message';
 import { paginate } from './paginate';
@@ -21,7 +22,7 @@ export async function openDocx(root: HTMLElement, data: ArrayBuffer): Promise<vo
   try {
     const options = { className: 'docx', inWrapper: true, breakPages: true, useBase64URL: true };
     const parsed = await parseAsync(data, options);
-    markKeepWithNext(parsed);
+    markKeepWithNext(parsed, await headerRows(data));
     view.append(...(await renderDocument(parsed, options)));
   } catch (e) {
     console.error('docx open failed', e);
@@ -95,13 +96,18 @@ function scaleLineHeights(view: HTMLElement): { measure(): void } {
       probe.textContent = 'x';
       probe.style.cssText = 'position:absolute;visibility:hidden;font-size:1000px;line-height:normal';
       view.append(probe);
+      // Font and size are set on the runs (spans), not the paragraph. But a line is at least as
+      // tall as the paragraph's own font needs, so a paragraph of 9pt runs would still get 12pt
+      // lines. Give each paragraph its first run's font. (Read everything, then write.)
+      const paragraphs = [...view.querySelectorAll<HTMLElement>('p')].map((p) => {
+        const run = p.querySelector('span');
+        const style = getComputedStyle(run ?? p);
+        return { p, family: style.fontFamily, size: run ? style.fontSize : '' };
+      });
       const ratios = new Map<string, string>();
-      for (const p of view.querySelectorAll<HTMLElement>('p')) {
-        // Fonts are usually set on the runs (spans), not the paragraph.
-        const family = getComputedStyle(p.querySelector('span') ?? p).fontFamily;
-        // A line is as tall as the paragraph's own font and its runs' fonts need together; give
-        // the paragraph its runs' font so two different fonts don't add stray fractions per line.
+      for (const { p, family, size } of paragraphs) {
         p.style.fontFamily = family;
+        if (size) p.style.fontSize = size;
         let ratio = ratios.get(family);
         if (!ratio) {
           probe.style.fontFamily = family;
@@ -129,11 +135,12 @@ function numberPages(wrapper: HTMLElement): void {
 }
 
 /**
- * Word's "keep with next" (set on headings) is parsed by docx-preview but not rendered. Carry it
- * into the HTML as `break-after: avoid`, which paginate.ts honours. `doc` is docx-preview's
+ * Word's "keep with next" (set on headings) and "repeat as header row" (tables) are parsed by
+ * docx-preview but not rendered. Carry both into the HTML as `break-after: avoid`, which
+ * paginate.ts honours. `doc` is docx-preview's
  * parsed model, which has no public types.
  */
-function markKeepWithNext(doc: any): void {
+function markKeepWithNext(doc: any, headerRow: boolean[]): void {
   const styles = new Map<string, any>((doc.stylesPart?.styles ?? []).map((style: any) => [style.id, style]));
   const styleKeeps = (id: string | undefined): boolean => {
     for (let hops = 0; id && hops < 20; hops++) {
@@ -143,11 +150,39 @@ function markKeepWithNext(doc: any): void {
     }
     return false;
   };
+  const rows: any[] = [];
   const visit = (element: any): void => {
+    if (element.type === 'row') rows.push(element);
     if (element.type === 'paragraph' && (element.keepNext ?? styleKeeps(element.styleName))) {
       element.cssStyle = { ...element.cssStyle, 'break-after': 'avoid' };
     }
     for (const child of element.children ?? []) visit(child);
   };
   if (doc.documentPart?.body) visit(doc.documentPart.body);
+  // Header rows repeat on each page the table continues on, so they never end a page either.
+  // Only trust the flags if they line up one-to-one with the rows docx-preview parsed.
+  if (rows.length === headerRow.length) {
+    rows.forEach((row, i) => {
+      if (headerRow[i]) row.cssStyle = { ...row.cssStyle, 'break-after': 'avoid' };
+    });
+  }
+}
+
+/**
+ * For every table row of the document, in order: is it a "repeat as header row"? Read from the
+ * XML directly because docx-preview misreads the usual valueless `<w:tblHeader/>` as false.
+ */
+async function headerRows(data: ArrayBuffer): Promise<boolean[]> {
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const xml = await (await JSZip.loadAsync(data)).file('word/document.xml')?.async('string');
+  if (!xml) return [];
+  const body = new DOMParser().parseFromString(xml, 'application/xml').getElementsByTagNameNS(W, 'body')[0];
+  if (!body) return [];
+  return [...body.getElementsByTagNameNS(W, 'tr')].map((row) => {
+    const flag = [...row.children]
+      .find((child) => child.localName === 'trPr')
+      ?.getElementsByTagNameNS(W, 'tblHeader')[0];
+    const value = flag?.getAttributeNS(W, 'val');
+    return !!flag && value !== '0' && value !== 'false';
+  });
 }
