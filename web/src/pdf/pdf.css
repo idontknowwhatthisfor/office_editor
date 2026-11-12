@@ -1,0 +1,212 @@
+.pdf-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  /* Bottom padding clears the fixed bar. */
+  padding: 8px 0 72px;
+}
+
+.pdf-page {
+  position: relative;
+  flex: none;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  overflow: hidden;
+}
+
+.pdf-page canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * Text layer: invisible, selectable text positioned over the canvas by PDF.js.
+ * Adapted from pdfjs-dist/web/pdf_viewer.css (Apache-2.0); PDF.js sets --font-height, --scale-x
+ * and --rotate on each span, and reads --total-scale-factor from the page element.
+ */
+.textLayer {
+  color-scheme: only light;
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  -webkit-text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer ::selection {
+  background: rgb(47 91 215 / 0.3);
+  color: transparent;
+}
+
+/* Search matches. <mark>, not <span>, so the span rules above don't apply to it. */
+.textLayer mark.hl {
+  color: transparent;
+  background: rgb(255 200 0 / 0.4);
+  border-radius: 2px;
+  scroll-margin: 96px;
+}
+
+.textLayer mark.hl.sel {
+  background: rgb(255 110 0 / 0.55);
+}
+
+/* ---- bottom bar ---- */
+
+.pdf-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  /* Pinned to the visible area while zoomed; see pinBar in viewer.ts. */
+  transform-origin: 0 100%;
+}
+
+.pdf-bar-row {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.pdf-bar-row[hidden] {
+  display: none;
+}
+
+.pdf-bar button {
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  border-radius: 24px;
+}
+
+.pdf-bar button:active {
+  background: var(--border);
+}
+
+.pdf-icon-button {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.pdf-indicator {
+  min-width: 96px;
+  height: 48px;
+  padding: 0 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pdf-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  margin-left: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.pdf-search-input:focus {
+  border-color: var(--accent);
+}
+
+.pdf-search-count {
+  flex: none;
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- page thumbnails ---- */
+
+.pdf-thumbs {
+  display: none;
+  gap: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.pdf-thumbs.open {
+  display: flex;
+  align-items: flex-end;
+}
+
+.pdf-bar .pdf-thumb {
+  flex: none;
+  width: 80px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+}
+
+.pdf-thumb.current {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text);
+}
+
+.pdf-thumb-frame {
+  width: 72px;
+  margin-bottom: 4px;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.pdf-thumb-frame canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

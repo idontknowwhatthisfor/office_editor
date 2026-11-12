@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="open_file">Buka file</string>
+    <string name="recent_files">File terbaru</string>
+    <string name="no_recent_title">Belum ada file terbaru</string>
+    <string name="no_recent_body">Buka file PDF, Word, Excel, atau PowerPoint untuk memulai. Semuanya tetap di perangkat ini.</string>
+    <string name="remove_from_recents">Hapus dari file terbaru</string>
+    <string name="back">Kembali</string>
+    <string name="share">Bagikan</string>
+    <string name="cant_open_title">File ini tidak bisa dibuka</string>
+    <string name="unsupported_format">Hanya file .pdf, .docx, .xlsx, dan .pptx yang didukung.</string>
+    <string name="file_unavailable">File tidak lagi tersedia. Mungkin sudah dipindahkan atau dihapus.</string>
+    <string name="share_failed">File ini tidak bisa dibagikan</string>
+    <string name="untitled">Tanpa judul</string>
+</resources>

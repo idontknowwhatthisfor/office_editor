@@ -1,0 +1,61 @@
+:root {
+  color-scheme: light dark;
+  --bg: #eceef2;
+  --surface: #ffffff;
+  --text: #1b1c1f;
+  --text-muted: #5b5e66;
+  --border: #d5d8de;
+  --accent: #2f5bd7;
+  font-family: system-ui, Roboto, sans-serif;
+  font-size: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111317;
+    --surface: #1e2025;
+    --text: #e4e5e9;
+    --text-muted: #a3a7b0;
+    --border: #34373e;
+    --accent: #a9bcff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.message {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.message p {
+  margin: 0 0 8px;
+  max-width: 40ch;
+}
+
+.message-title {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.dev-picker {
+  margin: 32px;
+}

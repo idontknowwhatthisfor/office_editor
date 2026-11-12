@@ -1,0 +1,25 @@
+{
+  "name": "officeeditor-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/copy-pdf-assets.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-pdf-assets.mjs",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/arimo": "5.3.0",
+    "@fontsource/carlito": "5.3.0",
+    "@fontsource/tinos": "5.3.0",
+    "docx-preview": "0.4.1",
+    "jszip": "3.10.2",
+    "pdfjs-dist": "6.5.438"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
+  }
+}

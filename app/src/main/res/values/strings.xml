@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OfficeEditor</string>
+    <string name="open_file">Open file</string>
+    <string name="recent_files">Recent files</string>
+    <string name="no_recent_title">No recent files</string>
+    <string name="no_recent_body">Open a PDF, Word, Excel or PowerPoint file to get started. Everything stays on this device.</string>
+    <string name="remove_from_recents">Remove from recent files</string>
+    <string name="back">Back</string>
+    <string name="share">Share</string>
+    <string name="cant_open_title">Can\'t open this file</string>
+    <string name="unsupported_format">Only .pdf, .docx, .xlsx and .pptx files are supported.</string>
+    <string name="file_unavailable">The file is no longer available. It may have been moved or deleted.</string>
+    <string name="share_failed">Couldn\'t share this file</string>
+    <string name="untitled">Untitled</string>
+</resources>

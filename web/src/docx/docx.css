@@ -1,0 +1,47 @@
+/* Overrides for docx-preview's generated markup: .docx-wrapper > section.docx (one per page). */
+
+.docx-view {
+  /* Sized by viewer.ts to the scaled pages; the margin is the gap to the screen edge. */
+  margin: 8px auto;
+  overflow: hidden;
+  /* Mobile browsers enlarge text in wide blocks; pages must keep their exact layout. */
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+.docx-view .docx-wrapper {
+  padding: 0;
+  background: none;
+  align-items: flex-start;
+}
+
+.docx-view .docx-wrapper > section.docx {
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  color-scheme: only light;
+}
+
+.docx-view .docx-wrapper > section.docx:last-child {
+  margin-bottom: 0;
+}
+
+/* Second half of a paragraph split across pages (paginate.ts): not a new list item. */
+.docx-view p.docx-continued {
+  counter-increment: none !important;
+}
+
+.docx-view p.docx-continued::before {
+  content: none !important;
+}
+
+/* docx-preview hyphenates everything; Word doesn't unless the document turns it on. */
+.docx-view .docx {
+  hyphens: manual;
+}
+
+/* The text area takes exactly the space between header and footer, so a few pixels of trailing
+   paragraph spacing can't push the footer off the page. */
+.docx-view section.docx > article {
+  flex: 1 1 0;
+  min-height: 0;
+}
