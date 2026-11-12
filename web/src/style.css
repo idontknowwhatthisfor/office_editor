@@ -59,3 +59,12 @@ body {
 .dev-picker {
   margin: 32px;
 }
+
+/* Development only (desktop browser, no native shell): stands in for the shell's Save button. */
+.dev-save {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 100;
+  padding: 8px 12px;
+}

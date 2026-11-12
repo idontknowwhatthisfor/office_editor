@@ -3,6 +3,7 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { t } from '../i18n';
 import { showMessage } from '../message';
+import { PdfEditor } from './editor';
 import { PdfSearch, type SearchState, type TextContent } from './search';
 
 // Runtime files copied to public/pdfjs by scripts/copy-pdf-assets.mjs.
@@ -41,7 +42,9 @@ const MEASURE_ALL_LIMIT = 300;
  * memory. From a URL only the parts of the file that are needed are read (256 KB at a time), so
  * a 700 MB book costs little memory until it is read through.
  */
-export async function openPdf(root: HTMLElement, source: { url: string } | { data: ArrayBuffer }): Promise<void> {
+export async function openPdf(
+  root: HTMLElement, source: { url: string } | { data: ArrayBuffer }, file = { name: 'document.pdf', size: -1 },
+): Promise<void> {
   let pdf: PDFDocumentProxy;
   let first: PDFPageProxy;
   try {
@@ -64,7 +67,16 @@ export async function openPdf(root: HTMLElement, source: { url: string } | { dat
     showMessage(root, t(key));
     return;
   }
-  new PdfViewer(root, pdf, first);
+  // Forms are filled in with HTML inputs over the page (editor.ts), so the canvas leaves them out.
+  let hasForms = false;
+  try {
+    // (getFieldObjects() comes back empty for some forms; the document info flag doesn't.)
+    const { info } = await pdf.getMetadata();
+    hasForms = !!(info as { IsAcroFormPresent?: boolean }).IsAcroFormPresent;
+  } catch {
+    // No usable form.
+  }
+  new PdfViewer(root, pdf, first, hasForms, file);
 }
 
 /**
@@ -89,10 +101,14 @@ class PdfViewer {
   private searchInput = el('input', 'pdf-search-input');
   private searchCount = el('span', 'pdf-search-count');
 
+  private editor: PdfEditor;
+
   constructor(
     root: HTMLElement,
     private pdf: PDFDocumentProxy,
     first: PDFPageProxy,
+    private hasForms: boolean,
+    file: { name: string; size: number },
   ) {
     // Until each page is measured (measureAll), assume they're all the size of the first.
     const size = first.getViewport({ scale: 1 });
@@ -116,6 +132,17 @@ class PdfViewer {
       (state) => this.showSearchState(state),
     );
 
+    this.editor = new PdfEditor(
+      {
+        pdf,
+        fileName: file.name,
+        size: file.size,
+        currentPage: () => this.current,
+        reload: () => location.reload(),
+      },
+      hasForms,
+      () => this.showMainRow(),
+    );
     const bar = this.buildBar();
     root.replaceChildren(this.pagesEl, bar);
     this.layout();
@@ -311,7 +338,11 @@ class PdfViewer {
       const canvas = document.createElement('canvas');
       canvas.width = Math.round(viewport.width);
       canvas.height = Math.round(viewport.height);
-      page.task = proxy.render({ canvas, viewport });
+      page.task = proxy.render({
+        canvas,
+        viewport,
+        annotationMode: this.hasForms ? pdfjs.AnnotationMode.ENABLE_FORMS : pdfjs.AnnotationMode.ENABLE,
+      });
       await page.task.promise;
       page.task = undefined;
       if (!this.wanted.has(page.index)) return;
@@ -336,6 +367,7 @@ class PdfViewer {
         page.el.append(textEl);
         this.search.pageRendered(page.index);
       }
+      void this.editor.pageReady(page.index, page.el, proxy);
     } catch (e) {
       page.task = undefined;
       if (e instanceof pdfjs.RenderingCancelledException) return;
@@ -377,11 +409,22 @@ class PdfViewer {
     const main = el('div', 'pdf-bar-row');
     const pagesButton = iconButton(ICON_PAGES, t('pages'));
     const searchButton = iconButton(ICON_SEARCH, t('search'));
+    const editButton = iconButton(ICON_EDIT, t('edit'));
+    editButton.onclick = () => {
+      if (!this.editor.start()) return;
+      this.thumbsEl.classList.remove('open');
+      main.hidden = true;
+      this.editor.row.hidden = false;
+    };
+    this.showMainRow = () => {
+      this.editor.row.hidden = true;
+      main.hidden = false;
+    };
     const toggleThumbs = () => this.toggleThumbs();
     pagesButton.onclick = toggleThumbs;
     this.indicator.onclick = toggleThumbs;
     this.indicator.setAttribute('aria-label', t('pages'));
-    main.append(pagesButton, this.indicator, searchButton);
+    main.append(pagesButton, this.indicator, searchButton, editButton);
 
     const searchRow = el('div', 'pdf-bar-row');
     searchRow.hidden = true;
@@ -421,9 +464,11 @@ class PdfViewer {
       main.hidden = false;
     };
 
-    bar.append(this.thumbsEl, main, searchRow);
+    bar.append(this.thumbsEl, main, searchRow, this.editor.row);
     return bar;
   }
+
+  private showMainRow: () => void = () => undefined;
 
   private showSearchState(state: SearchState): void {
     this.searchCount.textContent =
@@ -509,4 +554,5 @@ const ICON_SEARCH = 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0
 const ICON_PAGES = 'M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z';
 const ICON_UP = 'M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z';
 const ICON_DOWN = 'M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z';
+const ICON_EDIT = 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z';
 const ICON_CLOSE = 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z';

@@ -15,7 +15,14 @@ export interface DocInfo {
 
 declare global {
   interface Window {
-    OfficeBridge?: { getDocument(): string };
+    OfficeBridge?: {
+      getDocument(): string;
+      /** Editing (see save.ts). */
+      setDirty?(dirty: boolean): void;
+      beginSave?(): number;
+      writeChunk?(token: number, base64: string): void;
+      finishSave?(token: number, mode: string): void;
+    };
   }
 }
 

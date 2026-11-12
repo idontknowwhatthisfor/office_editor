@@ -19,7 +19,11 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
 - `web/` — Vite + TypeScript app, built into `app/src/main/assets/web` (git-ignored).
   - `src/main.ts` asks the bridge which document is open, fetches its bytes and loads that
     format's viewer as a separate chunk.
-  - `src/pdf/` — PDF viewer on PDF.js (`pdfjs-dist`, legacy build).
+  - `src/pdf/` — PDF viewer on PDF.js (`pdfjs-dist`, legacy build). Editing (M5): `editor.ts`
+    (tools, form inputs over the page, undo), `edits.ts` (the edit model, in PDF space),
+    `write.ts` (pdf-lib: highlights, underlines, ink and text become real annotations with
+    their own appearance streams; signatures are drawn into the page; form values get fresh
+    appearances; page rotation/deletion).
   - `src/docx/` — read-only Word viewer in page layout, as Word shows it. `docx-preview` renders
     the XML to HTML; `paginate.ts` splits it into pages (docx-preview only breaks at explicit
     page breaks); `viewer.ts` corrects line spacing, fills page numbers and scales pages to the
@@ -48,6 +52,15 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
   with the viewer's formatting. `make_pptx_sample.py` (python-pptx) + `pptx_resave.applescript`
   and `make_pptx_native.applescript` make decks that PowerPoint has saved, plus PowerPoint's PDF
   of each as the reference rendering. PowerPoint asks once for access to `test-files/`.
+
+**How edits are saved:** the shell owns the Save button and dialog (`ViewerActivity`); an editor
+reports unsaved changes with `OfficeBridge.setDirty`. On Save the shell calls
+`window.officeSave(mode)`; the editor builds the file, re-reads it, and streams it back in base64
+chunks (`web/src/save.ts` → `beginSave`/`writeChunk`/`finishSave`). `Saving.kt` writes it to a
+temporary file, checks the format's signature, then either replaces the original (backing it up
+first and restoring it if the write fails) or saves a copy through the system's save picker and
+reopens the copy. Files lent read-only ("Open with") can only be saved as a copy. In a desktop
+browser there is no shell: the editor offers a download instead.
 
 **How bytes reach the viewer:** not through the bridge. The document is served at
 `https://appassets.androidplatform.net/doc/current` and the page `fetch()`es it. The bridge only
@@ -105,6 +118,7 @@ options → "Verify apps over USB"); don't change that setting from here.
 | pdfjs-dist | Apache-2.0 (bundled decoders: see `web/node_modules/pdfjs-dist/wasm/LICENSE_*`) | PDF rendering, text, search |
 | docx-preview | Apache-2.0 | DOCX rendering |
 | ssf (SheetJS number formatter) + frac | Apache-2.0 | XLSX number and date formats |
+| pdf-lib (+ @pdf-lib/standard-fonts, @pdf-lib/upng, pako, tslib) | MIT (pako: MIT and Zlib) | Writing edited PDFs |
 | jszip (dependency of docx-preview) | MIT (dual MIT / GPL-3.0; used under MIT) | Reading the DOCX and XLSX zip |
 | @fontsource/tinos, arimo, carlito (font files) | OFL-1.1 as packaged | Stand-ins for Times New Roman, Arial, Calibri |
 | AndroidX (Compose, Activity, WebKit) | Apache-2.0 | Native shell |

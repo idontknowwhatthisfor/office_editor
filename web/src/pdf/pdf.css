@@ -210,3 +210,227 @@
   width: 100%;
   height: 100%;
 }
+
+/* ------------------------------------------------------------ editing (editor.ts) */
+
+/* Edits not yet saved, drawn over the page. Takes touches only while a tool needs them. */
+.pdf-edit-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 2;
+  /* Multiply onto the page, so text under a highlight stays readable (as in the saved file). */
+  mix-blend-mode: multiply;
+}
+
+body.pdf-drawing .pdf-edit-layer {
+  pointer-events: auto;
+  touch-action: none;
+  z-index: 5;
+  cursor: crosshair;
+}
+
+.pdf-form-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.pdf-field {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: rgb(0 84 255 / 0.1);
+  color: #000;
+  font-family: Helvetica, Arial, sans-serif;
+  pointer-events: auto;
+  resize: none;
+  color-scheme: only light;
+}
+
+.pdf-field:focus {
+  outline: 2px solid #2f5bd7;
+  background: rgb(255 255 255 / 0.95);
+}
+
+.pdf-field.pdf-check {
+  accent-color: #2f5bd7;
+}
+
+.pdf-page-deleted > canvas {
+  opacity: 0.25;
+}
+
+.pdf-page-badge {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 6;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 14px;
+  background: rgb(0 0 0 / 0.75);
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.pdf-edit-row {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+/* Nine tools must fit a phone's width (the bar is about 360 px there). */
+.pdf-bar .pdf-edit-row {
+  gap: 0;
+}
+
+.pdf-bar .pdf-edit-row .pdf-icon-button {
+  flex: 1 1 0;
+  min-width: 36px;
+  padding: 0;
+}
+
+.pdf-bar .pdf-icon-button.active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+}
+
+.pdf-bar .pdf-icon-button:disabled {
+  opacity: 0.35;
+}
+
+.pdf-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 76px);
+  z-index: 30;
+  max-width: calc(100vw - 32px);
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgb(32 33 36 / 0.92);
+  color: #fff;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.pdf-toast.show {
+  opacity: 1;
+}
+
+.pdf-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.pdf-dialog {
+  width: min(100%, 380px);
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.pdf-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.pdf-dialog-text {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+.pdf-dialog-sizes,
+.pdf-dialog-menu {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pdf-dialog-menu {
+  flex-direction: column;
+}
+
+.pdf-dialog-menu .pdf-text-button {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.pdf-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.pdf-text-button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 22px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.pdf-text-button.primary {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.pdf-dialog-sizes .pdf-text-button {
+  flex: 1;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.pdf-dialog-sizes .pdf-text-button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pdf-sign-pad {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: #fff;
+  touch-action: none;
+}
+
+.pdf-dialog-hint {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}

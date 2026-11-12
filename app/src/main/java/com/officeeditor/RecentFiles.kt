@@ -47,10 +47,18 @@ class RecentFiles(context: Context) {
     private fun reopenableUri(doc: DocumentInfo): Uri? {
         if (isOwnCopy(context, doc.uri)) return doc.uri
         val resolver = context.contentResolver
+        // Keep write access too where it was granted (the file picker grants it), so edits can be
+        // saved over the original later.
         try {
-            resolver.takePersistableUriPermission(doc.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            resolver.takePersistableUriPermission(
+                doc.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
         } catch (e: SecurityException) {
-            // Not offered by the sender; fall through to the copy.
+            try {
+                resolver.takePersistableUriPermission(doc.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: SecurityException) {
+                // Not offered by the sender; fall through to the copy.
+            }
         }
         if (resolver.persistedUriPermissions.any { it.uri == doc.uri && it.isReadPermission }) return doc.uri
         if (doc.size > MAX_COPY_BYTES) return null

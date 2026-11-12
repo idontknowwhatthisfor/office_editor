@@ -31,7 +31,7 @@ private const val DOC_PATH = "/doc/"
  * ranges). That avoids base64-encoding whole files across the JS bridge. Any other URL is refused.
  */
 @SuppressLint("SetJavaScriptEnabled")
-fun createDocumentWebView(context: Context, doc: DocumentInfo): WebView {
+fun createDocumentWebView(context: Context, doc: DocumentInfo, host: EditorHost): WebView {
     val format = requireNotNull(doc.format)
     val assetLoader = WebViewAssetLoader.Builder()
         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
@@ -63,8 +63,10 @@ fun createDocumentWebView(context: Context, doc: DocumentInfo): WebView {
                 return response ?: WebResourceResponse("text/plain", "utf-8", 404, "Not found", emptyMap(), null)
             }
 
-            // The viewer is a single page; nothing in a document may navigate away from it.
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = true
+            // The viewer is a single page; nothing in a document may navigate away from it. Only
+            // reloading the viewer itself is allowed (an editor does that to show the saved file).
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                request.url.toString().substringBefore('#') != VIEWER_URL
         }
         webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
@@ -77,7 +79,7 @@ fun createDocumentWebView(context: Context, doc: DocumentInfo): WebView {
                 return true
             }
         }
-        addJavascriptInterface(Bridge(doc, format), "OfficeBridge")
+        addJavascriptInterface(Bridge(doc, format, host), "OfficeBridge")
         loadUrl(VIEWER_URL)
     }
 }
@@ -155,8 +157,17 @@ private class EndingAt(private val source: InputStream, private val end: Long) :
     override fun close() = source.close()
 }
 
+/** What the viewer screen does for the web editors. Called on a WebView thread. */
+interface EditorHost {
+    /** The document has (or no longer has) unsaved changes. */
+    fun setDirty(dirty: Boolean)
+    val saves: SaveReceiver
+    /** All chunks of an edited file have arrived; [mode] is "overwrite" or "copy". */
+    fun finishSave(token: Int, mode: String)
+}
+
 /** What the web viewers can ask the native shell. Called on a WebView thread, not the UI thread. */
-private class Bridge(private val doc: DocumentInfo, private val format: DocFormat) {
+private class Bridge(private val doc: DocumentInfo, private val format: DocFormat, private val host: EditorHost) {
     /** The open document as JSON: `{name, format, mime, size, url}`; fetch `url` for the bytes. */
     @JavascriptInterface
     fun getDocument(): String = JSONObject()
@@ -166,4 +177,17 @@ private class Bridge(private val doc: DocumentInfo, private val format: DocForma
         .put("size", doc.size)
         .put("url", DOC_PATH + "current")
         .toString()
+
+    @JavascriptInterface
+    fun setDirty(dirty: Boolean) = host.setDirty(dirty)
+
+    /** Starts receiving an edited file; returns a token for [writeChunk] and [finishSave]. */
+    @JavascriptInterface
+    fun beginSave(): Int = host.saves.begin()
+
+    @JavascriptInterface
+    fun writeChunk(token: Int, base64: String) = host.saves.write(token, base64)
+
+    @JavascriptInterface
+    fun finishSave(token: Int, mode: String) = host.finishSave(token, mode)
 }

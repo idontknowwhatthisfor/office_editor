@@ -12,4 +12,17 @@
     <string name="file_unavailable">File tidak lagi tersedia. Mungkin sudah dipindahkan atau dihapus.</string>
     <string name="share_failed">File ini tidak bisa dibagikan</string>
     <string name="untitled">Tanpa judul</string>
+    <string name="save">Simpan</string>
+    <string name="save_title">Simpan perubahan</string>
+    <string name="save_body">Ganti file asli dengan perubahan Anda, atau simpan sebagai salinan baru dan biarkan file asli?</string>
+    <string name="save_body_copy_only">File ini tidak bisa diubah di sini (dibuka hanya-baca), jadi perubahan akan disimpan sebagai salinan baru.</string>
+    <string name="save_overwrite">Ganti file asli</string>
+    <string name="save_copy">Simpan salinan</string>
+    <string name="cancel">Batal</string>
+    <string name="unsaved_title">Simpan perubahan?</string>
+    <string name="unsaved_body">Ada perubahan yang belum disimpan.</string>
+    <string name="discard">Buang</string>
+    <string name="saved">Tersimpan</string>
+    <string name="saved_copy">Tersimpan sebagai salinan</string>
+    <string name="save_failed">Gagal menyimpan. File asli tidak diubah.</string>
 </resources>

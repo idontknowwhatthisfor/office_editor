@@ -13,4 +13,17 @@
     <string name="file_unavailable">The file is no longer available. It may have been moved or deleted.</string>
     <string name="share_failed">Couldn\'t share this file</string>
     <string name="untitled">Untitled</string>
+    <string name="save">Save</string>
+    <string name="save_title">Save changes</string>
+    <string name="save_body">Replace the original file with your changes, or keep the original and save a new copy?</string>
+    <string name="save_body_copy_only">This file can\'t be changed here (it was opened read-only), so your changes will be saved as a new copy.</string>
+    <string name="save_overwrite">Replace original</string>
+    <string name="save_copy">Save as copy</string>
+    <string name="cancel">Cancel</string>
+    <string name="unsaved_title">Save changes?</string>
+    <string name="unsaved_body">You have changes that aren\'t saved.</string>
+    <string name="discard">Discard</string>
+    <string name="saved">Saved</string>
+    <string name="saved_copy">Saved as a copy</string>
+    <string name="save_failed">Couldn\'t save. The original file has not been changed.</string>
 </resources>

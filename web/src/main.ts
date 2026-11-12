@@ -12,7 +12,7 @@ async function open(info: DocInfo, load: () => Promise<ArrayBuffer>): Promise<vo
     // PDFs can be huge; the viewer reads the file from its URL in pieces, as pages are needed.
     console.log(`opening pdf document from ${info.url}, ${info.size} bytes`);
     const { openPdf } = await import('./pdf/viewer');
-    await openPdf(app, { url: info.url });
+    await openPdf(app, { url: info.url }, { name: info.name, size: info.size });
     return;
   }
   let data: ArrayBuffer;
@@ -26,7 +26,7 @@ async function open(info: DocInfo, load: () => Promise<ArrayBuffer>): Promise<vo
   console.log(`opened ${info.format} document, ${data.byteLength} bytes`);
   if (info.format === 'pdf') {
     const { openPdf } = await import('./pdf/viewer');
-    await openPdf(app, { data });
+    await openPdf(app, { data }, { name: info.name, size: data.byteLength });
   } else if (info.format === 'docx') {
     const { openDocx } = await import('./docx/viewer');
     await openDocx(app, data);
