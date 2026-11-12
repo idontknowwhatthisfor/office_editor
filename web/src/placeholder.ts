@@ -2,9 +2,9 @@ import type { DocInfo } from './bridge';
 import { t } from './i18n';
 import { showMessage } from './message';
 
-const typeName = { xlsx: 'excel', pptx: 'powerpoint' } as const;
+const typeName = { pptx: 'powerpoint' } as const;
 
-/** Stand-in for the XLSX/PPTX viewers (PRD milestones M3–M4). */
+/** Stand-in for the PPTX viewer (PRD milestone M4). */
 export function showNotYetSupported(root: HTMLElement, info: DocInfo, data: ArrayBuffer): void {
   const type = t(typeName[info.format as keyof typeof typeName]);
   // Office files are ZIP archives, which start with "PK".

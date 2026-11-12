@@ -1,6 +1,6 @@
 # Handoff — OfficeEditor
 
-Written 12 Nov 2026 at the end of the first working session. Read `CLAUDE.md` first (architecture,
+Written 12 Nov 2026; updated at the end of the second session (M3). Read `CLAUDE.md` first (architecture,
 build commands, rules from the PRD); this file is the state of the work and what to do next.
 
 ## Where things stand
@@ -10,11 +10,11 @@ build commands, rules from the PRD); this file is the state of the work and what
 | M0 Skeleton | Done, verified on the phone. |
 | M1 PDF viewer | Working on the phone: scroll, pinch-zoom, text selection, search, thumbnails. Tested on generated samples, one Word-exported PDF and a 700 MB / 1,191-page textbook. |
 | M2 DOCX viewer | Working on the phone in Word-style page layout. Tested on one real Word file (`test-files/FallSafe_Essay_v5-2.docx`) and two synthetic ones. |
-| M3 XLSX viewer | **Next.** Not started; `.xlsx` opens to a "can't be viewed yet" message (`web/src/placeholder.ts`). |
-| M4 PPTX viewer | Not started; same placeholder. |
+| M3 XLSX viewer | Working on the phone (session 2): tabs, frozen panes, formats, merges, tap a cell to see its formula. Tested only on Excel-generated samples; **real files from the owner still needed.** Pinch-zoom not yet confirmed by a real finger. |
+| M4 PPTX viewer | **Next.** Not started; `.pptx` opens to a "can't be viewed yet" message (`web/src/placeholder.ts`). |
 | M5–M8 | Not started. |
 
-Two commits on `main`, working tree clean, nothing pushed (no remote).
+Commits on `main`, nothing pushed (no remote).
 
 ## What the owner asked for, beyond the PRD
 
@@ -24,20 +24,12 @@ Two commits on `main`, working tree clean, nothing pushed (no remote).
   debug. They follow along in short messages and unlock the phone when asked.
 - Global instruction: run `./gradlew --stop` after Gradle builds (8 GB Mac).
 
-## Next: M3, the XLSX viewer
+## Next: confirm M3, then M4 (PPTX viewer)
 
-PRD scope: multiple sheets with tabs, frozen header rows, zoom, computed formula values. Exit
-criterion: a corpus of real Excel files shows correct values.
-
-- Add `web/src/xlsx/viewer.ts` and a branch in `web/src/main.ts` (same pattern as `pdf/` and
-  `docx/`); remove `xlsx` from `placeholder.ts`.
-- The PRD suggests SheetJS CE or ExcelJS for parsing and Univer or Fortune-sheet for the grid.
-  Check licence and bundle size before choosing; a full grid library may be more than a viewer
-  needs. Record the choice and licence in `CLAUDE.md`.
-- There are no `.xlsx` test files yet. `test-files/make_samples.py` can be extended (it writes
-  DOCX by hand with `zipfile`), but ask the owner for real Excel files too: every bug of
-  substance so far was found with a real file, not a generated one.
-- XLSX is fetched whole (`fetchBytes`); only PDF reads by range.
+- Ask the owner for real Excel files and to pinch-zoom a sheet on the phone. CDP's
+  `Input.synthesizePinchGesture` delivers only touchstart + two touchmoves to this page (no
+  touchend), so it can't test the grid's own pinch handling.
+- M4 per PRD §4.5: slides with text, shapes, images; swipe, thumbnails, pinch-zoom.
 
 ## Open items
 
@@ -53,6 +45,19 @@ criterion: a corpus of real Excel files shows correct values.
   differently.
 - Links are inert. Pagination runs synchronously after render; not timed on long documents.
 - Only one real Word file tested. The PRD's fidelity warning (unsupported content) belongs to M7.
+
+**XLSX viewer** (`web/src/xlsx/`)
+- Values are Excel's cached results. A file written by a library that leaves formulas without
+  results (some exporters do) shows those cells empty. No formula engine yet (M6).
+- Not shown: charts, pictures, shapes (a notice says so), conditional formatting, data
+  validation, comments, rotated text, row/column default styles on empty cells, hyperlinks.
+- Text in a frozen column is cut at the frozen edge instead of spilling into the next column.
+- Built-in date/time formats follow en-US, not the device locale (Excel follows its locale).
+- Parsing the 5,000-row sample takes ~0.5 s on the phone (open-to-grid ~1.3 s); a DOM parse of a
+  much larger sheet will be slow and memory-hungry. The PRD's "read-only beyond 50k cells"
+  notice belongs to M6.
+- The comparison against Excel (`excel_text_dump.applescript`, then the formats in a browser
+  console) matched 9,082 of 9,087 cells; the rest are the Mac's Indonesian time separator.
 
 **PDF viewer** (`web/src/pdf/`)
 - Memory grows as a large PDF is read: PDF.js keeps every range it has loaded. Not measured to
@@ -96,6 +101,11 @@ criterion: a corpus of real Excel files shows correct values.
 - zsh does not word-split unquoted variables; use shell functions for repeated `adb` commands.
 
 ## Test files
+
+`excel-sample.xlsx` (4 sheets: budget with shared formulas and frozen panes, formats, a hidden
+sheet, hidden rows/columns without gridlines) and `excel-5000-rows.xlsx` were made by Mac Excel
+via `make_xlsx_samples.applescript` (Excel's locale here is Indonesian, so currency is "Rp").
+Both are on the phone in `Download/officeeditor-test/` (MediaStore ids 2130, 2131).
 
 `test-files/` is git-ignored apart from `make_samples.py` (run it to regenerate the synthetic
 PDFs and DOCX). The owner's essay (`FallSafe_Essay_v5-2.docx`) is there; Word's PDF export of it

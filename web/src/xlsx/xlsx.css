@@ -1,0 +1,287 @@
+/* Spreadsheet viewer (viewer.ts). The sheet itself is always light, as in Excel; the bar and tabs
+   around it follow the system theme. */
+
+.xlsx {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  --xlsx-accent: #217346;
+  --xlsx-grid: #e1e1e1;
+}
+
+@media (prefers-color-scheme: dark) {
+  .xlsx {
+    --xlsx-accent: #5cc08a;
+  }
+}
+
+/* Selected cell: address and contents (its formula, if it has one). */
+.xlsx-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 40px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  line-height: 20px;
+  touch-action: none;
+}
+
+.xlsx-ref {
+  flex: none;
+  min-width: 48px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.xlsx-text {
+  flex: 1;
+  min-width: 0;
+  min-height: 20px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
+.xlsx-text.open {
+  max-height: 30vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  touch-action: pan-y;
+}
+
+.xlsx-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  background: #fff4ce;
+  color: #5c4400;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.xlsx-notice[hidden] {
+  display: none;
+}
+
+.xlsx-notice span {
+  flex: 1;
+}
+
+.xlsx-notice-close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 22px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .xlsx-notice {
+    background: #3d3420;
+    color: #f3e2b3;
+  }
+}
+
+.xlsx-message {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.xlsx-message[hidden],
+.xlsx-scroll[hidden] {
+  display: none;
+}
+
+/* The grid scrolls natively; pinch-zoom is handled in viewer.ts. */
+.xlsx-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: none;
+  touch-action: pan-x pan-y;
+  background: #fff;
+  color: #000;
+  color-scheme: only light;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.xlsx-content {
+  position: relative;
+}
+
+/* Column letters + frozen rows: stuck to the top. Inside it, the corner (row-number header +
+   frozen columns of frozen rows) is also stuck to the left. */
+.xlsx-top {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #fff;
+}
+
+.xlsx-corner {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
+}
+
+.xlsx-body {
+  position: relative;
+}
+
+/* Row numbers + frozen columns: stuck to the left. */
+.xlsx-left {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
+}
+
+.xlsx-cells {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.xlsx-cells > * {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.xlsx-cells > .gv {
+  width: 1px;
+  background: var(--xlsx-grid);
+}
+
+.xlsx-cells > .gh {
+  height: 1px;
+  background: var(--xlsx-grid);
+}
+
+.xlsx-cells > .m {
+  background: #fff;
+}
+
+.xlsx-cells > .c {
+  display: flex;
+  overflow: hidden;
+  padding: 0 2px 1px;
+  white-space: pre;
+  line-height: 1.2;
+}
+
+.xlsx-cells > .c.w {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.xlsx-cells > .al { justify-content: flex-start; text-align: left; }
+.xlsx-cells > .ac { justify-content: center; text-align: center; }
+.xlsx-cells > .ar { justify-content: flex-end; text-align: right; }
+.xlsx-cells > .aj { justify-content: flex-start; text-align: justify; }
+.xlsx-cells > .as { justify-content: space-between; }
+.xlsx-cells > .vt { align-items: flex-start; }
+.xlsx-cells > .vc { align-items: center; }
+.xlsx-cells > .vb { align-items: flex-end; }
+
+/* Borders sit on the gridlines: the box starts 1px up and left of the cell. */
+.xlsx-cells > .b {
+  pointer-events: none;
+}
+
+.xlsx-cells > .sel {
+  border: 2px solid #217346;
+  pointer-events: none;
+}
+
+.xlsx-cells > .hcol,
+.xlsx-cells > .hrow,
+.xlsx-cells > .hx {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #f3f3f3;
+  color: #5b5e66;
+  border-right: 1px solid #d0d0d0;
+  border-bottom: 1px solid #d0d0d0;
+  font: 11px system-ui, Roboto, sans-serif;
+  white-space: nowrap;
+}
+
+.xlsx-cells > .hcol {
+  top: 0;
+}
+
+.xlsx-cells > .hrow,
+.xlsx-cells > .hx {
+  left: 0;
+  top: 0;
+}
+
+.xlsx-cells > .hrow {
+  justify-content: flex-end;
+  padding-right: 4px;
+}
+
+.xlsx-cells > .on {
+  background: #d3e7da;
+  color: #0f5132;
+  border-bottom-color: #217346;
+}
+
+.xlsx-cells > .hrow.on {
+  border-bottom-color: #d0d0d0;
+  border-right-color: #217346;
+}
+
+/* Sheet tabs along the bottom. */
+.xlsx-tabs {
+  display: flex;
+  flex: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  touch-action: pan-x;
+}
+
+.xlsx-tab {
+  flex: none;
+  max-width: 60vw;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 0;
+  border-top: 3px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xlsx-tab[aria-selected='true'] {
+  border-top-color: var(--xlsx-accent);
+  color: var(--text);
+  font-weight: 500;
+}
