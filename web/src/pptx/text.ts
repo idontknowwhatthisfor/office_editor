@@ -177,6 +177,22 @@ export interface BodyProps {
   vert: string;
   fontScale: number;
   lineReduction: number;
+  /** Which autofit applies: shrink text on overflow, resize the shape to the text, or none. */
+  autofit: 'norm' | 'shape' | 'none';
+}
+
+/** An editable shape's text, as the editor needs it (edit mode only). */
+export interface TextLayout {
+  body: BodyProps;
+  /** The text box in px. */
+  w: number;
+  h: number;
+  /** px per unit of the shape's own coordinates (EMU, or a group's child units). */
+  ky: number;
+  /** The autofit the shape inherits from its layout and master placeholders. */
+  inherited: BodyProps['autofit'];
+  /** Lays the text out again from the shape's current XML, optionally with other autofit values or height. */
+  html(over?: { fontScale?: number; lineReduction?: number; h?: number }): string;
 }
 
 /** Body properties from `<a:bodyPr>` elements, lowest priority first. */
@@ -189,9 +205,11 @@ export function bodyProps(chain: (Element | null | undefined)[]): BodyProps {
   const ins = (name: string, d: number) => Number(attr(name) ?? d) / EMU;
   let fontScale = 1;
   let lineReduction = 0;
+  let autofit: BodyProps['autofit'] = 'none';
   for (const el of chain) {
     const fit = el && children(el).find((c) => /Autofit$|^spAutoFit$/.test(c.localName));
     if (!fit) continue;
+    autofit = fit.localName === 'normAutofit' ? 'norm' : fit.localName === 'spAutoFit' ? 'shape' : 'none';
     fontScale = fit.localName === 'normAutofit' ? Number(fit.getAttribute('fontScale') ?? 100000) / 100000 : 1;
     lineReduction = fit.localName === 'normAutofit' ? Number(fit.getAttribute('lnSpcReduction') ?? 0) / 100000 : 0;
   }
@@ -203,7 +221,23 @@ export function bodyProps(chain: (Element | null | undefined)[]): BodyProps {
     vert: attr('vert') ?? 'horz',
     fontScale,
     lineReduction,
+    autofit,
   };
+}
+
+/** Paragraph and run content the editor can rewrite: plain text runs and line breaks. */
+const PLAIN_PARA = new Set(['pPr', 'r', 'br', 'endParaRPr']);
+
+export function isPlainParagraph(p: Element): boolean {
+  for (const c of p.children) {
+    if (!PLAIN_PARA.has(c.localName)) return false;
+    if (c.localName !== 'r') continue;
+    for (const rc of c.children) {
+      if (rc.localName !== 'rPr' && rc.localName !== 't') return false;
+      if (rc.localName === 'rPr' && [...rc.children].some((x) => x.localName.startsWith('hlink'))) return false;
+    }
+  }
+  return true;
 }
 
 // ------------------------------------------------------------------ rendering
@@ -281,25 +315,27 @@ function runCss(s: RunStyle, ctx: Ctx, scale: number): string {
  * overflows the box stays visible, as in PowerPoint.
  */
 export function renderText(
-  txBody: Element, levels: ParaStyle[], body: BodyProps, ctx: Ctx, box: { w: number; h: number },
+  txBody: Element, levels: ParaStyle[], body: BodyProps, ctx: Ctx, box: { w: number; h: number }, marks = false,
 ): string {
   const scale = body.fontScale;
   const counters: number[] = new Array(9).fill(0);
   let html = '';
-  for (const p of children(txBody, 'p')) {
+  for (const [pi, p] of children(txBody, 'p').entries()) {
     const pPr = child(p, 'pPr');
     const lvl = Math.min(8, Math.max(0, Number(pPr?.getAttribute('lvl') ?? 0)));
     const style = mergePara(levels[lvl], parsePPr(pPr, ctx));
     let runs = '';
     let firstRun: RunStyle | null = null;
-    for (const r of p.children) {
+    for (const [k, r] of [...p.children].entries()) {
+      // Edit mode: each run's span names its paragraph and run, to map edits back to the XML.
+      const mark = marks ? ` data-r="${pi}_${k}"` : '';
       if (r.localName === 'r' || r.localName === 'fld') {
         const rs = { ...style.run, ...parseRPr(child(r, 'rPr'), ctx) };
         let text = child(r, 't')?.textContent ?? '';
         if (r.localName === 'fld' && r.getAttribute('type') === 'slidenum') text = String(ctx.slideNumber);
         if (!text) continue;
         firstRun ??= rs;
-        runs += `<span style="${runCss(rs, ctx, scale)}">${escape(text)}</span>`;
+        runs += `<span${mark} style="${runCss(rs, ctx, scale)}">${escape(text)}</span>`;
       } else if (r.localName === 'br') {
         const rs = { ...style.run, ...parseRPr(child(r, 'rPr'), ctx) };
         firstRun ??= rs;
@@ -341,7 +377,8 @@ export function renderText(
       bullet = `<span class="bu" style="min-width:${width}px;font-size:${+bsize.toFixed(2)}px;font-family:${family};color:${bcol ? css(bcol) : '#000'}">${bullet}</span>`;
     }
     const content = runs || `<span style="${runCss(end, ctx, scale)}">&#8203;</span>`;
-    html += `<p style="${pcss}">${bullet}${content}</p>`;
+    const pmark = marks ? ` data-p="${pi}"${isPlainParagraph(p) ? '' : ' data-lock="1"'}` : '';
+    html += `<p${pmark} style="${pcss}">${bullet}${content}</p>`;
   }
 
   const [t, r, b, l] = body.insets;

@@ -4,7 +4,7 @@ import { renderChart } from '../chart';
 import { t } from '../i18n';
 import { showMessage } from '../message';
 import { registerEditor, setDirty } from '../save';
-import { menu, toast } from '../ui';
+import { fontSizeMenu, ICON_FONT_SIZE, menu, toast } from '../ui';
 import { numberText } from './calc';
 import { chartBox } from './drawings';
 import type { SheetEditor } from './edit';
@@ -130,6 +130,7 @@ class XlsxViewer {
   private input = el('input', 'xlsx-input');
   private undoButton = el('button', 'xlsx-bar-button');
   private redoButton = el('button', 'xlsx-bar-button');
+  private sizeButton = el('button', 'xlsx-bar-button');
   private editor: SheetEditor | null = null;
   /** The editor's text when editing began, to tell whether anything was changed. */
   private editStart = '';
@@ -175,7 +176,12 @@ class XlsxViewer {
   constructor(root: HTMLElement, private book: Workbook) {
     const view = el('div', 'xlsx');
     this.barText.setAttribute('aria-live', 'polite');
-    this.bar.append(this.barRef, this.barText, this.input, this.undoButton, this.redoButton);
+    this.bar.append(this.barRef, this.barText, this.input, this.sizeButton, this.undoButton, this.redoButton);
+    this.sizeButton.innerHTML = ICON_FONT_SIZE;
+    this.sizeButton.setAttribute('aria-label', t('fontSize'));
+    this.sizeButton.title = t('fontSize');
+    this.sizeButton.addEventListener('pointerdown', (e) => e.preventDefault());
+    this.sizeButton.onclick = () => void this.fontSize();
     this.barText.onclick = () => void this.startEdit();
     this.input.hidden = true;
     this.input.enterKeyHint = 'done';
@@ -948,18 +954,39 @@ class XlsxViewer {
     this.afterEdit(true);
   }
 
+  /** Font size of the selected cell(s). */
+  private async fontSize(): Promise<void> {
+    const sel = this.sel;
+    if (!sel || !this.sheet) {
+      toast(t('tapCellFirst'));
+      return;
+    }
+    const editor = await this.ensureEditor();
+    if (!editor.canFormat) {
+      toast(t('cantFormat'));
+      return;
+    }
+    const cell = this.sheet.rows[sel.r0]?.get(sel.c0);
+    const pt = await fontSizeMenu((this.book.formats[cell?.xf ?? 0] ?? this.book.formats[0]).font.size);
+    if (!pt || this.sel !== sel) return;
+    editor.setFontSize(this.index, sel, pt);
+    this.afterEdit(true);
+  }
+
   private history(which: 'undo' | 'redo'): void {
     const editor = this.editor;
     if (!editor) return;
     const op = which === 'undo' ? editor.undo() : editor.redo();
     if (!op) return;
-    this.afterEdit(op.kind === 'shift');
+    this.afterEdit(op.kind !== 'cell');
   }
 
   /** Redraws after an edit; `layout` when rows or columns were added or removed. */
   private afterEdit(layout: boolean): void {
     const editor = this.editor;
     if (!editor || !this.sheet) return;
+    // Formats may have been added (font sizes): one CSS rule per format.
+    this.styleEl.textContent = formatRules(this.book.formats, (f) => this.cssFamily(f));
     if (layout) this.layout(this.sheet);
     this.showBar();
     this.renderAll();

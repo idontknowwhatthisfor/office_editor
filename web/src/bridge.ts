@@ -29,6 +29,8 @@ declare global {
       /** Export as PDF: the print layout is ready (page size in CSS px), or failed. */
       printReady?(width: number, height: number): void;
       printFailed?(): void;
+      /** A presentation is shown full screen (the shell hides its bars and turns landscape). */
+      setPresenting?(on: boolean): void;
     };
   }
 }

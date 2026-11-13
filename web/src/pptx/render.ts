@@ -7,7 +7,7 @@ import {
 import { adjustments, customOutline, presetOutline, type Outline } from './geometry';
 import { renderChart } from '../chart';
 import { renderTable } from './table';
-import { bodyProps, levelStyles, mergePara, overlay, renderText, type ParaStyle } from './text';
+import { bodyProps, levelStyles, mergePara, overlay, renderText, type ParaStyle, type TextLayout } from './text';
 
 // Draws one slide as HTML: a box of the slide's size in CSS px (1 px = 9525 EMU) holding the
 // master's and layout's own shapes, then the slide's. Shapes are absolutely positioned boxes
@@ -17,6 +17,34 @@ export interface RenderedSlide {
   el: HTMLElement;
   /** Kinds of content not drawn: 'chart', 'diagram', 'object', 'picture', 'media'. */
   missing: Set<string>;
+  /** Edit mode: the text of each editable shape, by its number in `editableShapes()`. */
+  texts: Map<number, TextLayout>;
+}
+
+const PML = 'http://schemas.openxmlformats.org/presentationml/2006/main';
+/** Placeholders that hold pictures, tables, charts… rather than text. */
+const NON_TEXT_PH = new Set(['pic', 'chart', 'tbl', 'dgm', 'media', 'clipArt', 'sldImg']);
+
+const SHAPES = new Set(['sp', 'cxnSp', 'pic', 'grpSp', 'graphicFrame', 'contentPart', 'AlternateContent']);
+
+/** The drawing elements directly in a shape tree, in order (edit mode's `data-el` numbers). */
+export function topShapes(spTree: Element | null): Element[] {
+  return children(spTree).filter((c) => SHAPES.has(c.localName));
+}
+
+/**
+ * The slide's shapes whose text can be edited, in document order (their numbers are what edit
+ * mode writes into `data-sp`). Shapes inside alternate content are left out: changing one
+ * choice would leave the other stale.
+ */
+export function editableShapes(slideRoot: Element): Element[] {
+  const out: Element[] = [];
+  for (const sp of slideRoot.getElementsByTagNameNS(PML, 'sp')) {
+    let inAlt = false;
+    for (let a = sp.parentElement; a && !inAlt; a = a.parentElement) inAlt = a.localName === 'AlternateContent';
+    if (!inAlt) out.push(sp);
+  }
+  return out;
 }
 
 /** Maps a shape tree's coordinates (EMU) to px in the element the shapes are drawn into. */
@@ -35,14 +63,16 @@ interface Inherited {
   master: Master;
 }
 
-export async function renderSlide(deck: Deck, index: number): Promise<RenderedSlide> {
+export async function renderSlide(deck: Deck, index: number, options: { edit?: boolean } = {}): Promise<RenderedSlide> {
   const slide = await deck.slide(index);
   const { layout } = slide;
   const { master } = layout;
   const missing = new Set<string>();
+  const texts = new Map<number, TextLayout>();
   const base: Ctx = {
     deck, theme: master.theme, clrMap: slide.clrMap, part: slide, slideNumber: index + 1, missing, ids: { n: 0 },
   };
+  if (options.edit) base.edit = { shapes: new Map(editableShapes(slide.root).map((sp, n) => [sp, n])), texts };
   const at = (part: Part): Ctx => ({ ...base, part, ids: base.ids });
   const inh: Inherited = { slide, layout, master };
 
@@ -71,9 +101,18 @@ export async function renderSlide(deck: Deck, index: number): Promise<RenderedSl
   const showMaster = (root: Element) => root.getAttribute('showMasterSp') !== '0';
   if (showMaster(slide.root) && showMaster(layout.root)) html += await renderTree(tree(master), ROOT, at(master), inh, false);
   if (showMaster(slide.root)) html += await renderTree(tree(layout), ROOT, at(layout), inh, false);
-  html += await renderTree(tree(slide), ROOT, at(slide), inh, true);
+  if (options.edit) {
+    // Edit mode: each of the slide's own top-level elements is marked with its number in
+    // topShapes(), so it can be selected, moved and resized.
+    for (const [n, c] of topShapes(tree(slide)).entries()) {
+      const one = await renderElement(c, ROOT, at(slide), inh, true);
+      html += c.localName === 'AlternateContent' ? one : one.replace(/^<(\w+)/, (_, tag: string) => `<${tag} data-el="${n}"`);
+    }
+  } else {
+    html += await renderTree(tree(slide), ROOT, at(slide), inh, true);
+  }
   el.insertAdjacentHTML('beforeend', html);
-  return { el, missing };
+  return { el, missing, texts };
 }
 
 /** A fill style element wrapped so fillElement() finds it among children. */
@@ -247,7 +286,10 @@ async function renderShape(el: Element, space: Space, ctx: Ctx, inh: Inherited, 
 
   let text = '';
   const txBody = child(el, 'txBody');
-  if (txBody && hasText(txBody)) {
+  // Edit mode: a slide's shape with a text body, or a text placeholder (even an empty one).
+  const editNo = isSlide && el.localName === 'sp' ? ctx.edit?.shapes.get(el) : undefined;
+  const editable = editNo !== undefined && (!!txBody || (!!ph && !NON_TEXT_PH.has(ph.type)));
+  if ((txBody && hasText(txBody)) || editable) {
     let levels: ParaStyle[];
     if (ph) {
       const master = inh.master;
@@ -269,11 +311,34 @@ async function renderShape(el: Element, space: Space, ctx: Ctx, inh: Inherited, 
     const body = bodyProps(chain.map((s) => child(child(s, 'txBody'), 'bodyPr')));
     // SmartArt drawings give the text its own rectangle inside the shape.
     const txBox = boxOf(child(el, 'txXfrm'), space);
-    const html = renderText(txBody, levels, body, ctx, { w: (txBox ?? box).w, h: (txBox ?? box).h });
-    text = txBox ? `<div class="sp" style="${boxStyle({ ...txBox, x: txBox.x - box.x, y: txBox.y - box.y, rot: 0 })}">${html}</div>` : html;
+    if (editable) {
+      const layout: TextLayout = {
+        body, w: box.w, h: box.h, ky: space.ky, inherited: bodyProps(chain.slice(0, 2).map((s) => child(child(s, 'txBody'), 'bodyPr'))).autofit,
+        // The text body is looked up again each time: the editor may have added or changed it.
+        html: (over = {}) => renderText(
+          child(el, 'txBody') ?? emptyBody(), levels, { ...body, ...over }, ctx, { w: box.w, h: over.h ?? box.h }, true),
+      };
+      ctx.edit!.texts.set(editNo!, layout);
+      text = layout.html();
+    } else {
+      const html = renderText(txBody!, levels, body, ctx, { w: (txBox ?? box).w, h: (txBox ?? box).h });
+      text = txBox ? `<div class="sp" style="${boxStyle({ ...txBox, x: txBox.x - box.x, y: txBox.y - box.y, rot: 0 })}">${html}</div>` : html;
+    }
   }
   if (!svg && !text) return '';
-  return `<div class="sp" style="${boxStyle(box, shadow ? `;filter:${shadow}` : '')}">${svg}${text}</div>`;
+  const mark = editable ? ` data-sp="${editNo}"` : '';
+  return `<div class="sp"${mark} style="${boxStyle(box, shadow ? `;filter:${shadow}` : '')}">${svg}${text}</div>`;
+}
+
+let empty: Element | null = null;
+
+/** A text body with one empty paragraph, drawn for a placeholder that has none yet. */
+function emptyBody(): Element {
+  empty ??= new DOMParser().parseFromString(
+    '<p:txBody xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ' +
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:bodyPr/><a:lstStyle/><a:p/></p:txBody>',
+    'application/xml').documentElement;
+  return empty;
 }
 
 function lstStyle(sp: Element | null): Element | null {

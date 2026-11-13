@@ -46,11 +46,11 @@ function button(label: string, onClick: () => void, primary = false): HTMLButton
 }
 
 /** A list of choices; resolves with the chosen value, or null if cancelled. */
-export function menu<T extends string>(title: string, items: [T, string][]): Promise<T | null> {
+export function menu<T extends string>(title: string, items: [T, string][], className = ''): Promise<T | null> {
   return new Promise((resolve) => {
     const d = box(title);
     const list = document.createElement('div');
-    list.className = 'ui-menu';
+    list.className = `ui-menu ${className}`.trim();
     for (const [value, label] of items) list.append(button(label, () => { d.close(); resolve(value); }));
     d.panel.insertBefore(list, d.actions);
     d.actions.append(button(t('cancel'), () => { d.close(); resolve(null); }));
@@ -66,3 +66,17 @@ export function confirm(title: string, body: string, ok: string): Promise<boolea
     );
   });
 }
+
+/** Font sizes offered by the editors, in points (as Office's size list). */
+export const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 54, 60, 66, 72];
+
+/** Asks for a font size in points; `current` (if known) is shown in the title. */
+export async function fontSizeMenu(current?: number): Promise<number | null> {
+  const now = current ? Math.round(current * 2) / 2 : undefined;
+  const title = now ? t('fontSizeNow', { n: now }) : t('fontSize');
+  const choice = await menu(title, FONT_SIZES.map((n) => [String(n), n === now ? `✓ ${n}` : String(n)] as [string, string]), 'ui-sizes');
+  return choice ? Number(choice) : null;
+}
+
+/** Material Symbols "format_size" (Apache-2.0), for a toolbar button. */
+export const ICON_FONT_SIZE = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z"/></svg>';

@@ -3,6 +3,7 @@ import { prepareCharts } from './charts';
 import JSZip from 'jszip';
 import { t } from '../i18n';
 import { registerEditor, setDirty, type SaveResult } from '../save';
+import { fontSizeMenu, ICON_FONT_SIZE } from '../ui';
 import { fontsLoaded, GUTTER, scaleLineHeights } from './viewer';
 
 // Word editing (PRD M7), done in place on the file's own XML.
@@ -201,6 +202,7 @@ class DocxEditor {
     add('<b>B</b>', t('bold'), () => this.format('bold'));
     add('<i>I</i>', t('italic'), () => this.format('italic'));
     add('<u>U</u>', t('underlineText'), () => this.format('underline'));
+    add(ICON_FONT_SIZE, t('fontSize'), () => void this.fontSize());
     add(ICON_ALIGN, t('alignment'), () => this.cycleAlign());
     add('H', t('headingStyle'), () => void this.headingMenu(), 'docx-tool-h');
     add(ICON_BULLETS, t('bullets'), () => this.setList('bullet'));
@@ -219,6 +221,41 @@ class DocxEditor {
     if (!this.current()) return toast(t('tapTextFirst'));
     document.execCommand('styleWithCSS', false, 'false');
     document.execCommand(command);
+    this.changed(true);
+  }
+
+  /** Font size of the selected text, or (with only a caret) of the whole paragraph. */
+  private async fontSize(): Promise<void> {
+    const p = this.current();
+    if (!p) return toast(t('tapTextFirst'));
+    // The dialog takes the focus: remember the selection first.
+    const sel = getSelection()!;
+    const range = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    const at = range?.startContainer instanceof Element ? range.startContainer : range?.startContainer.parentElement ?? p;
+    const pt = await fontSizeMenu((parseFloat(getComputedStyle(at).fontSize) * 72) / 96);
+    p.focus();
+    if (!pt) return;
+    if (range && !range.collapsed && p.contains(range.commonAncestorContainer)) {
+      const piece = range.extractContents();
+      for (const e of piece.querySelectorAll<HTMLElement>('[style]')) e.style.fontSize = '';
+      const span = el('span');
+      span.dataset.sz = String(pt);
+      span.style.fontSize = `${pt}pt`;
+      span.append(piece);
+      range.insertNode(span);
+      const again = document.createRange();
+      again.selectNodeContents(span);
+      sel.removeAllRanges();
+      sel.addRange(again);
+    } else {
+      p.dataset.sz = String(pt);
+      for (const e of p.querySelectorAll<HTMLElement>('span')) e.style.fontSize = `${pt}pt`;
+      for (const e of p.querySelectorAll<HTMLElement>('[data-sz]')) e.dataset.sz = String(pt);
+      if (range) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
     this.changed(true);
   }
 
@@ -476,11 +513,27 @@ class DocxEditor {
         insertPPr(newPPr, numPr);
       }
     }
+    if (p.dataset.sz) {
+      // The paragraph mark too (it sets the height of an empty paragraph).
+      let markPr = child(newPPr, 'rPr');
+      if (!markPr) {
+        markPr = doc.createElementNS(W, 'w:rPr');
+        insertPPr(newPPr, markPr);
+      }
+      const half = String(Math.round(Number(p.dataset.sz) * 2));
+      setVal(doc, markPr, 'sz', half);
+      setVal(doc, markPr, 'szCs', half);
+    }
     if (newPPr.childNodes.length) out.append(newPPr);
     for (const b of keep) out.append(b.cloneNode(true));
 
     // The text, in pieces with the same source run and the same bold/italic/underline.
-    type Piece = { run: string | null; look: Look; text: string; kind: 'text' | 'tab' | 'br' };
+    type Piece = { run: string | null; look: Look; text: string; kind: 'text' | 'tab' | 'br'; size?: string };
+    // A size the user chose (on a span, or for the whole paragraph), in points.
+    const sizeOf = (holder: Element) => {
+      const e = holder.closest<HTMLElement>('[data-sz]');
+      return e && p.contains(e) && e !== p ? e.dataset.sz : p.dataset.sz;
+    };
     const pieces: Piece[] = [];
     let lastRun: string | null = runs.length ? `${i}_0` : null;
     const walk = (node: Node) => {
@@ -492,13 +545,13 @@ class DocxEditor {
         const run = runEl && p.contains(runEl) ? runEl.dataset.r! : lastRun;
         lastRun = run;
         const tab = holder.closest<HTMLElement>('[data-tab]');
-        pieces.push({ run, look: lookOf(holder, p), text: tab ? '\t' : text.replace(/ /g, ' '), kind: tab ? 'tab' : 'text' });
+        pieces.push({ run, look: lookOf(holder, p), text: tab ? '\t' : text.replace(/ /g, ' '), kind: tab ? 'tab' : 'text', size: sizeOf(holder) });
         return;
       }
       if (node instanceof HTMLBRElement) {
         // The <br> an empty paragraph needs to be tappable is not a line break.
         if (node === p.lastChild || !node.nextSibling) return;
-        pieces.push({ run: lastRun, look: lookOf(node.parentElement!, p), text: '', kind: 'br' });
+        pieces.push({ run: lastRun, look: lookOf(node.parentElement!, p), text: '', kind: 'br', size: sizeOf(node.parentElement!) });
         return;
       }
       for (const c of node.childNodes) walk(c);
@@ -522,7 +575,7 @@ class DocxEditor {
 
     let current: { key: string; r: Element } | null = null;
     for (const piece of pieces) {
-      const key = `${piece.run}|${+piece.look.b}${+piece.look.i}${+piece.look.u}`;
+      const key = `${piece.run}|${+piece.look.b}${+piece.look.i}${+piece.look.u}|${piece.size ?? ''}`;
       if (!current || current.key !== key) {
         const src = runById(piece.run);
         const r = doc.createElementNS(W, 'w:r');
@@ -530,6 +583,12 @@ class DocxEditor {
         if (piece.look.b !== src.look.b) setToggle(doc, rPr, 'b', piece.look.b);
         if (piece.look.i !== src.look.i) setToggle(doc, rPr, 'i', piece.look.i);
         if (piece.look.u !== src.look.u) setVal(doc, rPr, 'u', piece.look.u ? 'single' : 'none');
+        if (piece.size) {
+          // Half-points; szCs is the size of complex-script text (Arabic, Thai…).
+          const half = String(Math.round(Number(piece.size) * 2));
+          setVal(doc, rPr, 'sz', half);
+          setVal(doc, rPr, 'szCs', half);
+        }
         if (rPr.childNodes.length) r.append(rPr);
         out.append(r);
         current = { key, r };
@@ -669,6 +728,7 @@ function setVal(doc: Document, parent: Element, name: string, value: string): vo
   if (!e) {
     e = doc.createElementNS(W, `w:${name}`);
     if (parent.localName === 'pPr') insertPPr(parent, e);
+    else if (parent.localName === 'rPr') insertRPr(parent, e);
     else parent.append(e);
   }
   e.setAttributeNS(W, 'w:val', value);
@@ -678,7 +738,7 @@ function setToggle(doc: Document, rPr: Element, name: string, on: boolean): void
   let e = child(rPr, name);
   if (!e) {
     e = doc.createElementNS(W, `w:${name}`);
-    rPr.append(e);
+    insertRPr(rPr, e);
   }
   if (on) e.removeAttributeNS(W, 'val');
   else e.setAttributeNS(W, 'w:val', '0');
@@ -689,6 +749,17 @@ const PPR_ORDER = ['pStyle', 'keepNext', 'keepLines', 'pageBreakBefore', 'frameP
   'pBdr', 'shd', 'tabs', 'suppressAutoHyphens', 'kinsoku', 'wordWrap', 'overflowPunct', 'topLinePunct', 'autoSpaceDE', 'autoSpaceDN',
   'bidi', 'adjustRightInd', 'snapToGrid', 'spacing', 'ind', 'contextualSpacing', 'mirrorIndents', 'suppressOverlap', 'jc',
   'textDirection', 'textAlignment', 'textboxTightWrap', 'outlineLvl', 'divId', 'cnfStyle', 'rPr', 'sectPr', 'pPrChange'];
+
+/** rPr children in schema order (Word may refuse a file with them out of order). */
+const RPR_ORDER = ['rStyle', 'rFonts', 'b', 'bCs', 'i', 'iCs', 'caps', 'smallCaps', 'strike', 'dstrike', 'outline', 'shadow',
+  'emboss', 'imprint', 'noProof', 'snapToGrid', 'vanish', 'webHidden', 'color', 'spacing', 'w', 'kern', 'position', 'sz', 'szCs',
+  'highlight', 'u', 'effect', 'bdr', 'shd', 'fitText', 'vertAlign', 'rtl', 'cs', 'em', 'lang', 'eastAsianLayout', 'specVanish', 'oMath', 'rPrChange'];
+
+function insertRPr(rPr: Element, el: Element): void {
+  const rank = RPR_ORDER.indexOf(el.localName);
+  const before = [...rPr.children].find((c) => RPR_ORDER.indexOf(c.localName) > rank);
+  rPr.insertBefore(el, before ?? null);
+}
 
 function insertPPr(pPr: Element, el: Element): void {
   const rank = PPR_ORDER.indexOf(el.localName);

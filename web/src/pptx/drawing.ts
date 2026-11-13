@@ -1,3 +1,4 @@
+import type { TextLayout } from './text';
 import { child, children, first, relAttr } from '../ooxml';
 import { EMU, type Deck, type Part, type Theme } from './deck';
 
@@ -16,6 +17,8 @@ export interface Ctx {
   missing: Set<string>;
   /** Unique ids for SVG gradients and markers. */
   ids: { n: number };
+  /** Edit mode: the slide's editable shapes (by number) and their text layouts. */
+  edit?: { shapes: Map<Element, number>; texts: Map<number, TextLayout> };
 }
 
 /** What resolving a colour needs: the theme's colours and the colour map (charts in Word use it too). */

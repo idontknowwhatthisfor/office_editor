@@ -64,7 +64,12 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     every sheet), undo/redo, and writes back into the sheet XML: values as inline strings,
     `fullCalcOnLoad` set, `calcChain.xml` removed. Formulas with functions it lacks keep Excel's
     value. Sheets with Excel tables can't have rows/columns inserted (would break the table).
-  - `src/ui.ts` — dialogs, menus, toast (used by the spreadsheet editor).
+  - `src/ui.ts` — dialogs, menus, toast (used by the spreadsheet editor), and the font size
+    picker every editor uses (`fontSizeMenu`, `FONT_SIZES`). Font size: Word and PowerPoint wrap
+    the selected text in a `data-sz` span (or mark the paragraph, with only a caret; a selected
+    PowerPoint box changes all its text) and write `w:sz`/`w:szCs` (half-points, rPr in schema
+    order) or `a:rPr sz` (1/100 pt); Excel adds a font and a cellXfs entry per (base format,
+    size) to styles.xml and raises row heights; PDF text boxes take a size in points.
   - `src/pagebar.ts` — the bottom bar shared by the PDF and Word viewers.
   - `src/print.ts` — "Export as PDF" (⋮ menu, Word/Excel/PowerPoint). The shell loads the saved
     file a second time in a hidden WebView with `print` set (`Printing.kt`); the page lays it
@@ -80,8 +85,27 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     slide → layout → master → theme; `render.ts` draws a slide as HTML (shapes as SVG outlines
     from `geometry.ts`, text as HTML from `text.ts`, tables from `table.ts`), following
     placeholder inheritance and theme style references (`p:style`). `viewer.ts`: one slide per
-    screen with scroll-snap, thumbnails, its own pinch/double-tap zoom. SmartArt without a
+    screen with scroll-snap, thumbnails, its own pinch/double-tap zoom, and Present (beside the
+    edit pencil): full screen on black, tap right/left to go on/back. In the app the page calls
+    `OfficeBridge.setPresenting(true)` and the shell hides its top bar and the system bars and
+    turns landscape; Back calls `window.officeEndPresentation()`. In a browser: Fullscreen API. SmartArt without a
     saved drawing, and charts `src/chart/` can't draw, show a placeholder and a notice.
+  - `src/pptx/editor.ts` — PowerPoint text editing (M9), in place on each slide's XML. Edit mode
+    renders slides with marks (`renderSlide(…, {edit})`: `data-sp` per editable shape, `data-p`,
+    `data-r`) and the Deck keeps one working XML per slide (`keepSlides`). Typing, Enter and
+    joins only change the screen; after a pause a box's paragraphs are rebuilt into the XML
+    (unchanged ones copied, changed ones from their pPr/rPr/endParaRPr). Leaving a box fits its
+    text (normAutofit shrink steps / spAutoFit height, measured offscreen) and redraws the slide.
+    Never redraw while a box is being typed in: Android keyboards compose words, and changing the
+    DOM mid-composition puts the word back in the wrong place (Enter waits for `compositionend`).
+    Locked: paragraphs with fields or links, tables, charts, SmartArt. Only changed slides are
+    written; their root start tag is kept as in the original.
+    `shapes.ts` moves and resizes (part of M11): edit mode marks the slide's top-level elements
+    `data-el` (`topShapes()`); the first tap selects one (no caret, so the keyboard doesn't push
+    the slide away), a second tap on its text types; a drag on the selected element moves it, a
+    handle resizes it (opposite corner fixed, rotation-aware; picture corners keep the ratio).
+    Writes `off`/`ext` (a move only shifts `off`; a placeholder that inherits its position gets
+    its own `a:xfrm`; a group's `chOff`/`chExt` stay, so its children scale). Tables move only.
   - `src/chart/` — charts, drawn from the values Office caches in each chart part (nothing is
     recalculated). `read.ts` reads DrawingML charts (bar/column incl. 3D, line, area, pie,
     doughnut, scatter, bubble, radar) and chartex (box & whisker only) into a model; `draw.ts`

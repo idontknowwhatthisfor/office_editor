@@ -62,6 +62,17 @@
   flex-direction: column;
 }
 
+.ui-menu.ui-sizes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+}
+
+.ui-sizes .ui-button {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .ui-actions {
   display: flex;
   justify-content: flex-end;

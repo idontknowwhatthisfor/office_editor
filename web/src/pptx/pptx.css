@@ -79,16 +79,221 @@
   pointer-events: none;
 }
 
-.pptx-strip {
+.pptx-bottom {
   flex: none;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.pptx-strip {
+  flex: 1;
+  min-width: 0;
   display: flex;
   gap: 8px;
   padding: 12px;
   overflow-x: auto;
   scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.pptx-edit {
+  margin-right: 4px;
+  border: 0;
+  border-radius: 24px;
+  background: none;
+  color: var(--text);
+}
+
+.pptx-edit[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------------ presenting */
+
+.pptx-end {
+  display: none;
+}
+
+.pptx.presenting {
+  background: #000;
+}
+
+.pptx.presenting .pptx-bottom,
+.pptx.presenting .pptx-count,
+.pptx.presenting .pptx-notice {
+  display: none;
+}
+
+.pptx.presenting .pptx-page {
+  padding: 0;
+}
+
+.pptx.presenting .pptx-sizer {
+  box-shadow: none;
+}
+
+/* Faint until touched, so it doesn't sit on the slide. */
+.pptx.presenting .pptx-end {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 22px;
+  background: rgb(0 0 0 / 0.35);
+  color: #fff;
+  opacity: 0.35;
+}
+
+.pptx.presenting .pptx-end:hover,
+.pptx.presenting .pptx-end:focus-visible {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------ editing (editor.ts) */
+
+/* Slides change from the thumbnails only: a swipe across text would select it. */
+.pptx.editing .pptx-pager {
+  overflow-x: hidden;
+}
+
+.pptx.editing .pptx-count {
+  display: none;
+}
+
+/* Keyboard up: the slide gets the room. */
+.pptx.typing .pptx-bottom,
+.pptx.typing .pptx-notice {
+  display: none;
+}
+
+.pptx-tools {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  /* Kept together in the middle of a wide screen. */
+  padding: 4px max(4px, calc(50% - 300px)) calc(4px + env(safe-area-inset-bottom));
   background: var(--surface);
   border-top: 1px solid var(--border);
-  touch-action: pan-x;
+}
+
+.pptx-tool {
+  flex: 1 1 0;
+  min-width: 36px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 24px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 18px;
+}
+
+.pptx-tool:active {
+  background: var(--border);
+}
+
+@media (max-height: 480px) {
+  .pptx-tool {
+    height: 40px;
+  }
+
+  .pptx-tools {
+    padding-top: 2px;
+    padding-bottom: calc(2px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Move and resize (shapes.ts): the selected element takes drags; a frame with handles sits over it. */
+.slide.editing .oe-selected {
+  touch-action: none;
+}
+
+.pptx-sel {
+  position: absolute;
+  z-index: 5;
+  box-sizing: border-box;
+  outline: calc(1.5px * var(--k, 1)) solid var(--pptx-accent, #c43e1c);
+  pointer-events: none;
+}
+
+.pptx-sel.dragging {
+  outline-style: dashed;
+}
+
+.pptx-handle {
+  position: absolute;
+  width: calc(14px * var(--k, 1));
+  height: calc(14px * var(--k, 1));
+  box-sizing: border-box;
+  border: calc(1.5px * var(--k, 1)) solid var(--pptx-accent, #c43e1c);
+  border-radius: 50%;
+  background: #fff;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* A larger target than the dot, for a finger. */
+.pptx-handle::before {
+  content: '';
+  position: absolute;
+  inset: calc(-12px * var(--k, 1));
+}
+
+.pptx-sel.fixed-size .pptx-handle,
+.pptx-sel.dragging .pptx-handle {
+  visibility: hidden;
+}
+
+.pptx-handle[data-h='nw'] { left: 0; top: 0; }
+.pptx-handle[data-h='n'] { left: 50%; top: 0; }
+.pptx-handle[data-h='ne'] { left: 100%; top: 0; }
+.pptx-handle[data-h='e'] { left: 100%; top: 50%; }
+.pptx-handle[data-h='se'] { left: 100%; top: 100%; }
+.pptx-handle[data-h='s'] { left: 50%; top: 100%; }
+.pptx-handle[data-h='sw'] { left: 0; top: 100%; }
+.pptx-handle[data-h='w'] { left: 0; top: 50%; }
+
+/* Outlines and prompts are sized for the screen: --k is 1 / the slide's scale. */
+.pptx-sizer .slide.editing .sp[data-sp] {
+  outline: calc(1px * var(--k, 1)) dashed rgb(0 0 0 / 0.35);
+}
+
+.pptx-sizer .slide.editing .sp[data-sp]:focus-within {
+  z-index: 1;
+  outline: calc(2px * var(--k, 1)) solid var(--pptx-accent);
+}
+
+.pptx-sizer .slide.editing .sp.oe-empty::after {
+  content: attr(data-prompt);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(0 0 0 / 0.45);
+  font: calc(13px * var(--k, 1)) / 1.2 sans-serif;
+  pointer-events: none;
+}
+
+.slide.editing p[contenteditable='true'] {
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+.pptx-sizer .slide.editing .oe-locked {
+  opacity: 0.6;
 }
 
 .pptx-thumb {

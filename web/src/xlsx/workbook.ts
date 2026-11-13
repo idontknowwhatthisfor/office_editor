@@ -111,6 +111,9 @@ export class Workbook {
   sheets: SheetEntry[] = [];
   activeSheet = 0;
   formats: CellFormat[] = [];
+  /** The styles part, and how many cell formats (`cellXfs`) it has; the editor adds to both. */
+  stylesPath = '';
+  xfCount = 0;
   date1904 = false;
   /** Excel's "maximum digit width" of the default font in px: the unit of column widths. */
   digitWidth = 7;
@@ -187,6 +190,7 @@ export class Workbook {
     this.theme = new Theme(themeDoc);
     this.chartTheme = { theme: themeDoc ? readTheme(themeDoc) : DEFAULT_THEME, clrMap: CLR_MAP, baseSize: 10, frame: true };
     const stylesPath = target('/styles');
+    this.stylesPath = stylesPath ?? '';
     this.readStyles(stylesPath ? await this.xml(stylesPath) : null);
     const stringsPath = target('/sharedStrings');
     if (stringsPath) this.readStrings(await this.xml(stringsPath));
@@ -241,6 +245,7 @@ export class Workbook {
       name: 'Calibri', size: 11, bold: false, italic: false, underline: '', strike: false, colour: '', family: 2,
     };
     const xfs = all(first(doc, 'cellXfs'), 'xf');
+    this.xfCount = xfs.length;
     this.formats = (xfs.length ? xfs : [null]).map((el) => {
       const num = (name: string) => Number(el?.getAttribute(name) ?? 0);
       const align = first(el, 'alignment');
@@ -524,7 +529,7 @@ function decodeRange(ref: string): Range | null {
   };
 }
 
-function ptToPx(pt: number): number {
+export function ptToPx(pt: number): number {
   return Math.round((pt * 96) / 72);
 }
 
@@ -552,7 +557,7 @@ function digitWidth(font: Font): number {
 }
 
 /** Excel's default row height for a font, when the file doesn't give one. */
-function defaultRowPt(font: Font): number {
+export function defaultRowPt(font: Font): number {
   return Math.round(font.size * 1.36 * 4) / 4;
 }
 

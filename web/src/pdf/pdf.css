@@ -284,6 +284,22 @@ body.pdf-drawing .pdf-edit-layer {
   color: var(--surface);
 }
 
+.pdf-dialog-sizes {
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text);
+}
+
+.pdf-size-select {
+  min-height: 40px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
 .pdf-dialog-sizes .pdf-text-button {
   flex: 1;
   border: 1px solid var(--border);

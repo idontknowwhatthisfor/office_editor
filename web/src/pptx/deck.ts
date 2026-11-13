@@ -65,8 +65,14 @@ export class Deck {
   tableStyles = new Map<string, Element>();
   private parts = new Map<string, Promise<Part | Layout | Master>>();
   private images = new Map<string, Promise<string | null>>();
+  /**
+   * Edit mode: each slide's XML is parsed once and kept, so the editor and the renderer share
+   * one working copy.
+   */
+  keepSlides = false;
+  private slideDocs = new Map<string, Promise<Document | null>>();
 
-  private constructor(private pkg: Package) {}
+  private constructor(readonly pkg: Package) {}
 
   static async open(data: ArrayBuffer): Promise<Deck> {
     const deck = new Deck(await Package.open(data));
@@ -95,9 +101,25 @@ export class Deck {
     for (const style of all(styles, 'tblStyle')) this.tableStyles.set(style.getAttribute('styleId') ?? '', style);
   }
 
+  /** A slide's XML (in edit mode, the working copy). */
+  slideDoc(index: number): Promise<Document | null> {
+    const path = this.slidePaths[index];
+    let doc = this.slideDocs.get(path);
+    if (!doc) {
+      doc = this.pkg.xml(path);
+      if (this.keepSlides) this.slideDocs.set(path, doc);
+    }
+    return doc;
+  }
+
+  /** Replaces a slide's working XML (undo). */
+  setSlideDoc(index: number, doc: Document): void {
+    this.slideDocs.set(this.slidePaths[index], Promise.resolve(doc));
+  }
+
   async slide(index: number): Promise<SlidePart> {
     const path = this.slidePaths[index];
-    const doc = await this.pkg.xml(path);
+    const doc = await this.slideDoc(index);
     if (!doc) throw new Error(`missing ${path}`);
     const rels = await this.pkg.rels(path);
     const layoutPath = relOfType(rels, '/slideLayout')?.target;

@@ -1,6 +1,7 @@
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { t } from '../i18n';
 import { isDirty, registerEditor, setDirty, type SaveResult } from '../save';
+import { FONT_SIZES } from '../ui';
 import { COLOURS, editSvg, type Edit, type FormValue, type PageSpace } from './edits';
 
 // PDF editing (PRD M5): highlight and underline selected text, draw, add text, sign, rotate or
@@ -562,21 +563,35 @@ function textButton(label: string, onClick: () => void, primary = false): HTMLBu
   return b;
 }
 
+/** The size the last text box was given, for the next one. */
+let lastTextSize = 14;
+
 function textDialog(): Promise<{ text: string; size: number } | null> {
   return new Promise((resolve) => {
     const d = dialog(t('addText'));
     const area = el('textarea', 'pdf-dialog-text');
     area.rows = 3;
-    let size = 14;
-    const sizes = el('div', 'pdf-dialog-sizes');
-    for (const [label, value] of [[t('small'), 10], [t('medium'), 14], [t('large'), 20]] as const) {
-      const b = textButton(label, () => {
-        size = value;
-        for (const c of sizes.children) c.classList.toggle('active', c === b);
-      });
-      b.classList.toggle('active', value === size);
-      sizes.append(b);
+    let size = lastTextSize;
+    // Font size in points (PDF units are points, so it is the size on the page).
+    const sizes = el('label', 'pdf-dialog-sizes');
+    const caption = el('span', '');
+    caption.textContent = t('fontSize');
+    const select = el('select', 'pdf-size-select');
+    for (const n of FONT_SIZES) {
+      const option = el('option', '');
+      option.value = String(n);
+      option.textContent = `${n} pt`;
+      option.selected = n === size;
+      select.append(option);
     }
+    // A preview in the box, within reason for a phone screen.
+    const preview = () => (area.style.fontSize = `${Math.min(Math.max(size, 10), 32)}px`);
+    select.onchange = () => {
+      size = Number(select.value);
+      preview();
+    };
+    preview();
+    sizes.append(caption, select);
     d.box.insertBefore(area, d.actions);
     d.box.insertBefore(sizes, d.actions);
     d.actions.append(
@@ -584,6 +599,7 @@ function textDialog(): Promise<{ text: string; size: number } | null> {
       textButton(t('add'), () => {
         const text = area.value.replace(/\s+$/, '');
         d.close();
+        if (text) lastTextSize = size;
         resolve(text ? { text, size } : null);
       }, true),
     );

@@ -2,6 +2,7 @@ package com.officeeditor
 
 import android.content.ClipData
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -79,6 +80,8 @@ class ViewerActivity : ComponentActivity(), EditorHost {
     private var printView by mutableStateOf<WebView?>(null)
     private var exporting by mutableStateOf(false)
     private var menuOpen by mutableStateOf(false)
+    /** A presentation is shown full screen: no top bar, no system bars, landscape. */
+    private var fullScreen by mutableStateOf(false)
     /** Leave the screen once the save in progress succeeds (the user chose Save on leaving). */
     private var closeAfterSave = false
     private var pendingCopy: File? = null
@@ -121,9 +124,10 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                 // Typing on a phone held sideways leaves room for little but the keyboard, so
                 // the top bar steps aside until the keyboard closes.
                 val typingSideways = LocalConfiguration.current.screenHeightDp < 480 && WindowInsets.isImeVisible
+                val noInsets = WindowInsets(0, 0, 0, 0)
                 Scaffold(
                     topBar = {
-                        if (!typingSideways) TopAppBar(
+                        if (!typingSideways && !fullScreen) TopAppBar(
                             title = {
                                 Text(
                                     doc?.name ?: stringResource(R.string.app_name),
@@ -173,7 +177,7 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                     // (Dialogs are drawn after the content, below.)
                     // (safeDrawing: navigation bar, keyboard, and a camera cutout at the side when
                     // the phone is held sideways.)
-                    contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                    contentWindowInsets = if (fullScreen) noInsets else WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
                 ) { padding ->
                     val view = webView
                     if (view != null) {
@@ -200,6 +204,10 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                     }
                 }
                 BackHandler(enabled = unsaved && !saving) { dialog = Dialog.UNSAVED }
+                // Back ends a presentation first (the page then calls setPresenting(false)).
+                BackHandler(enabled = fullScreen) {
+                    webView?.evaluateJavascript("window.officeEndPresentation && window.officeEndPresentation()", null)
+                }
                 SaveDialogs()
             }
         }
@@ -212,10 +220,14 @@ class ViewerActivity : ComponentActivity(), EditorHost {
     @androidx.compose.runtime.Composable
     private fun StatusBarOnTallScreens() {
         val short = LocalConfiguration.current.screenHeightDp < 480
-        LaunchedEffect(short) {
+        LaunchedEffect(short, fullScreen) {
             val bars = WindowCompat.getInsetsController(window, window.decorView)
             bars.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            if (short) bars.hide(WindowInsetsCompat.Type.statusBars()) else bars.show(WindowInsetsCompat.Type.statusBars())
+            if (fullScreen) bars.hide(WindowInsetsCompat.Type.systemBars())
+            else {
+                bars.show(WindowInsetsCompat.Type.navigationBars())
+                if (short) bars.hide(WindowInsetsCompat.Type.statusBars()) else bars.show(WindowInsetsCompat.Type.statusBars())
+            }
         }
     }
 
@@ -268,6 +280,14 @@ class ViewerActivity : ComponentActivity(), EditorHost {
 
     override fun setDirty(dirty: Boolean) {
         runOnUiThread { unsaved = dirty }
+    }
+
+    override fun setPresenting(on: Boolean) {
+        runOnUiThread {
+            fullScreen = on
+            // Slides are wide: present in landscape (either way up), then give the phone back.
+            requestedOrientation = if (on) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
     }
 
     private fun startSave(mode: String) {

@@ -45,7 +45,7 @@ async function open(info: DocInfo, load: () => Promise<ArrayBuffer>): Promise<vo
     await openXlsx(app, data);
   } else {
     const { openPptx } = await import('./pptx/viewer');
-    await openPptx(app, data);
+    await openPptx(app, data, info.name);
   }
 }
 

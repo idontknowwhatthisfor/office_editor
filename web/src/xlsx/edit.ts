@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import { Unsupported, XError, evaluate, numberText, parse, shiftReferences, toNumber, toSerial, type Book, type RangeRef, type Shift, type Value } from './calc';
 import { isDateFormat } from './format';
 import { shiftFormula } from './formula';
-import { decodeCol, encodeCol, Workbook, type Cell, type Sheet } from './workbook';
+import { decodeCol, defaultRowPt, encodeCol, ptToPx, Workbook, type Cell, type Range, type Sheet } from './workbook';
 
 // Spreadsheet editing (PRD M6): cell values and formulas (recalculated, with everything that
 // depends on them), inserting and deleting rows and columns, undo/redo, and saving back into
@@ -22,7 +22,8 @@ interface Snapshot {
 
 type Op =
   | { kind: 'cell'; sheet: number; r: number; c: number; before: Cell | undefined; after: Cell | undefined; recalc: Map<Key, [Cell | undefined, Cell | undefined]> }
-  | { kind: 'shift'; shift: { sheet: number; axis: 'row' | 'col'; at: number; count: number }; snapshot: Snapshot; after: Snapshot };
+  | { kind: 'shift'; shift: { sheet: number; axis: 'row' | 'col'; at: number; count: number }; snapshot: Snapshot; after: Snapshot }
+  | { kind: 'format'; snapshot: Snapshot; after: Snapshot };
 
 interface Deps {
   /** Formula cells by the single cells they read. */
@@ -48,9 +49,17 @@ export class SheetEditor {
   private deps: Deps | null = null;
   private unshared = false;
   names: { name: string; sheet: number | null; formula: string }[];
+  /** Cell formats added this session: book.formats[book.xfCount + i] is `base` with another font size. */
+  private added: { base: number; size: number }[] = [];
+  private sized = new Map<string, number>();
+  /** Rows made taller for larger text, by sheet. */
+  private grown = new Map<number, Set<number>>();
+  /** Each sheet's row heights as loaded (to tell which rows to write). */
+  private loadedHeights: (Float64Array | null)[];
 
   private constructor(readonly book: Workbook, readonly sheets: (Sheet | null)[]) {
     this.names = book.definedNames.map((n) => ({ ...n }));
+    this.loadedHeights = sheets.map((sh) => sh && sh.rowHeights.slice());
   }
 
   /** Loads every worksheet (formulas can reach across sheets). */
@@ -276,6 +285,68 @@ export class SheetEditor {
     return recalc;
   }
 
+  // ---------------------------------------------------------------- formatting
+
+  /** Formatting needs the file's styles part, read in full. */
+  get canFormat(): boolean {
+    return !!this.book.stylesPath && this.book.xfCount > 0 && this.book.xfCount + this.added.length === this.book.formats.length;
+  }
+
+  /**
+   * Sets the font size (points) of the cells in `range`. Empty cells get the size too when the
+   * range is small (typing there later uses it); a whole row or column only changes its filled
+   * cells. Rows grow to fit, as Excel's automatic row height does (they never shrink here).
+   */
+  setFontSize(s: number, range: Range, pt: number): void {
+    const sheet = this.sheets[s];
+    if (!sheet) throw new EditError('not a worksheet');
+    if (!this.canFormat) throw new EditError('styles');
+    const snapshot = this.snapshot();
+    const fillEmpty = (range.r1 - range.r0 + 1) * (range.c1 - range.c0 + 1) <= 500;
+    const rows = new Set<number>();
+    for (let r = range.r0; r <= range.r1; r++) {
+      const row = sheet.rows[r];
+      if (!row && !fillEmpty) continue;
+      for (let c = range.c0; c <= range.c1; c++) {
+        const cell = row?.get(c);
+        if (!cell && !fillEmpty) continue;
+        const xf = this.withSize(cell?.xf ?? 0, pt);
+        if (cell?.xf === xf) continue;
+        this.put(s, r, c, cell ? { ...cell, xf } : { t: 'z', v: null, xf });
+        rows.add(r);
+      }
+    }
+    if (!rows.size) return;
+    // Excel's automatic height for the font (default rows are 15 pt for 11 pt text).
+    const need = ptToPx(defaultRowPt({ ...this.book.formats[0].font, size: pt }));
+    for (const r of rows) {
+      const h = sheet.rowHeights[r];
+      if (h > 0 && h < need) {
+        sheet.rowHeights[r] = need;
+        if (!this.grown.has(s)) this.grown.set(s, new Set());
+        this.grown.get(s)!.add(r);
+      }
+    }
+    this.ops.push({ kind: 'format', snapshot, after: this.snapshot() });
+    this.undone = [];
+  }
+
+  /** The cell format like `xf` with font size `pt`, added if the file doesn't have it yet. */
+  private withSize(xf: number, pt: number): number {
+    const base = xf >= this.book.xfCount ? this.added[xf - this.book.xfCount].base : xf;
+    const fmt = this.book.formats[base] ?? this.book.formats[0];
+    if (fmt.font.size === pt) return base;
+    const k = `${base}:${pt}`;
+    let index = this.sized.get(k);
+    if (index === undefined) {
+      index = this.book.formats.length;
+      this.book.formats.push({ ...fmt, font: { ...fmt.font, size: pt } });
+      this.added.push({ base, size: pt });
+      this.sized.set(k, index);
+    }
+    return index;
+  }
+
   // ---------------------------------------------------------------- rows and columns
 
   canShift(s: number): boolean {
@@ -420,6 +491,7 @@ export class SheetEditor {
     }
 
     await this.writeWorkbook(out, shifts.length > 0);
+    if (this.added.length) await this.writeStyles(out);
     const bytes = await out.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
     // Read it back as the viewer would before it may replace the original.
     const check = await Workbook.open(bytes.buffer as ArrayBuffer);
@@ -458,8 +530,11 @@ export class SheetEditor {
           // shared formula); only its value is new.
           const f = childNS(cEl, 'f');
           const same = !rewriteFormulas && f && (cell.si !== undefined || (cell.f !== undefined && f.textContent === cell.f));
-          if (same) writeValue(doc, cEl, cell);
-          else writeCell(doc, cEl, cell);
+          if (same) {
+            writeValue(doc, cEl, cell);
+            if (cell.xf) cEl.setAttribute('s', String(cell.xf));
+            else cEl.removeAttribute('s');
+          } else writeCell(doc, cEl, cell);
           changed = true;
         }
       }
@@ -475,8 +550,48 @@ export class SheetEditor {
       writeCell(doc, cEl, cell);
       changed = true;
     }));
+    // Rows made taller for larger text (unless undone since).
+    const loaded = this.loadedHeights[s];
+    const shifted = this.ops.some((op) => op.kind === 'shift');
+    for (const r of this.grown.get(s) ?? []) {
+      const h = sheet.rowHeights[r];
+      if (h === undefined || (!shifted && loaded && loaded[r] === h)) continue;
+      findOrAddRow(doc, sheetData, r).setAttribute('ht', String((h * 72) / 96));
+      changed = true;
+    }
     if (changed) updateDimension(doc, sheet);
     return changed;
+  }
+
+  /** Adds a font and a cell format to styles.xml for each format added this session, in order. */
+  private async writeStyles(out: JSZip): Promise<void> {
+    const path = this.book.stylesPath;
+    const doc = new DOMParser().parseFromString(await out.file(path)!.async('string'), 'application/xml');
+    const root = doc.documentElement;
+    const fonts = childNS(root, 'fonts')!;
+    const cellXfs = childNS(root, 'cellXfs')!;
+    const xfs = childrenNS(cellXfs, 'xf');
+    for (const { base, size } of this.added) {
+      const baseXf = xfs[base] ?? xfs[0];
+      const fontEls = childrenNS(fonts, 'font');
+      const font = (fontEls[Number(baseXf.getAttribute('fontId') ?? 0)] ?? fontEls[0]).cloneNode(true) as Element;
+      let sz = childNS(font, 'sz');
+      if (!sz) {
+        sz = el(doc, 'sz');
+        // Schema order: b i strike condense extend outline shadow u vertAlign sz color name family charset scheme.
+        const after = ['color', 'name', 'family', 'charset', 'scheme'].map((n) => childNS(font, n)).find(Boolean) ?? null;
+        font.insertBefore(sz, after);
+      }
+      sz.setAttribute('val', String(size));
+      fonts.append(font);
+      fonts.setAttribute('count', String(childrenNS(fonts, 'font').length));
+      const xf = baseXf.cloneNode(true) as Element;
+      xf.setAttribute('fontId', String(childrenNS(fonts, 'font').length - 1));
+      xf.setAttribute('applyFont', '1');
+      cellXfs.append(xf);
+      cellXfs.setAttribute('count', String(childrenNS(cellXfs, 'xf').length));
+    }
+    out.file(path, new XMLSerializer().serializeToString(doc), KEEP);
   }
 
   private async writeWorkbook(out: JSZip, shifted: boolean): Promise<void> {

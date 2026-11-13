@@ -173,6 +173,8 @@ interface EditorHost {
     /** Export as PDF: the print layout is ready; first page size in CSS px (1/96 inch). */
     fun printReady(width: Double, height: Double) = Unit
     fun printFailed() = Unit
+    /** A presentation is shown full screen (or no longer is). */
+    fun setPresenting(on: Boolean) = Unit
 }
 
 /** What the web viewers can ask the native shell. Called on a WebView thread, not the UI thread. */
@@ -216,4 +218,7 @@ private class Bridge(
 
     @JavascriptInterface
     fun printFailed() = host.printFailed()
+
+    @JavascriptInterface
+    fun setPresenting(on: Boolean) = host.setPresenting(on)
 }
