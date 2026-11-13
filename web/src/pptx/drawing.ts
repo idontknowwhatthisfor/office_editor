@@ -18,6 +18,13 @@ export interface Ctx {
   ids: { n: number };
 }
 
+/** What resolving a colour needs: the theme's colours and the colour map (charts in Word use it too). */
+export interface ColourCtx {
+  theme: { colours: Record<string, string> };
+  clrMap: Record<string, string>;
+  phClr?: Rgba;
+}
+
 export interface Rgba {
   r: number;
   g: number;
@@ -39,7 +46,7 @@ function hex(h: string): Rgba {
 }
 
 /** The colour inside `el` (a solidFill, gs, buClr…), or `el` itself if it is a colour element. */
-export function colour(el: Element | null | undefined, ctx: Ctx): Rgba | null {
+export function colour(el: Element | null | undefined, ctx: ColourCtx): Rgba | null {
   if (!el) return null;
   const c = COLOUR_TAGS.has(el.localName) ? el : children(el).find((x) => COLOUR_TAGS.has(x.localName));
   if (!c) return null;

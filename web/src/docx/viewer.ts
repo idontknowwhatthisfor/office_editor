@@ -5,6 +5,7 @@ import JSZip from 'jszip';
 import { t } from '../i18n';
 import { showMessage } from '../message';
 import { PageBar, THUMB_WIDTH } from '../pagebar';
+import { prepareCharts } from './charts';
 import { paginate } from './paginate';
 import { DocxSearch } from './search';
 
@@ -103,7 +104,9 @@ async function renderPages(root: HTMLElement, data: ArrayBuffer): Promise<{ view
     const options = { className: 'docx', inWrapper: true, breakPages: true, useBase64URL: true };
     const parsed = await parseAsync(data, options);
     markKeepWithNext(parsed, await headerRows(data));
+    const drawCharts = await prepareCharts(parsed, data);
     view.append(...(await renderDocument(parsed, options)));
+    drawCharts(view);
   } catch (e) {
     console.error('docx open failed', e);
     showMessage(root, t('docxInvalid'));

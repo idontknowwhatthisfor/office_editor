@@ -80,8 +80,18 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     slide → layout → master → theme; `render.ts` draws a slide as HTML (shapes as SVG outlines
     from `geometry.ts`, text as HTML from `text.ts`, tables from `table.ts`), following
     placeholder inheritance and theme style references (`p:style`). `viewer.ts`: one slide per
-    screen with scroll-snap, thumbnails, its own pinch/double-tap zoom. Charts, and SmartArt
-    without a saved drawing, show a placeholder and a notice.
+    screen with scroll-snap, thumbnails, its own pinch/double-tap zoom. SmartArt without a
+    saved drawing, and charts `src/chart/` can't draw, show a placeholder and a notice.
+  - `src/chart/` — charts, drawn from the values Office caches in each chart part (nothing is
+    recalculated). `read.ts` reads DrawingML charts (bar/column incl. 3D, line, area, pie,
+    doughnut, scatter, bubble, radar) and chartex (box & whisker only) into a model; `draw.ts`
+    lays it out like Office (title, legend, auto axis scale with ~5% headroom) as SVG without
+    ids. Used by the PPTX frames (`render.ts`) and Word (`docx/charts.ts`: docx-preview leaves a
+    chart as an empty sized box; its parsed drawings are matched to the XML in order), and
+    Excel (`xlsx/drawings.ts` reads a sheet's cell anchors; the viewer draws charts in overlay
+    layers over the grid, not re-rendered on scroll; chart sheets are fitted to the screen; both
+    print). Kinds it can't draw keep the placeholder. `test-files/make_xlsx_charts.applescript`
+    builds the Excel sample (Excel's scripting needs `chart wizard`, not `set source data`).
   - `src/ooxml.ts` — zip/XML/relationship helpers shared by the XLSX and PPTX readers.
 - `test-files/` — sample documents; `make_samples.py` regenerates the synthetic ones.
   `make_xlsx_samples.applescript` builds XLSX samples with Microsoft Excel itself (installed on

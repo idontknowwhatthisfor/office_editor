@@ -1,4 +1,5 @@
 import { parseAsync, renderDocument } from 'docx-preview';
+import { prepareCharts } from './charts';
 import JSZip from 'jszip';
 import { t } from '../i18n';
 import { registerEditor, setDirty, type SaveResult } from '../save';
@@ -107,7 +108,10 @@ class DocxEditor {
       className: 'docx', inWrapper: true, breakPages: false, ignoreLastRenderedPageBreak: true,
       renderHeaders: false, renderFooters: false, renderFootnotes: false, renderEndnotes: false, useBase64URL: true,
     };
-    this.view.append(...(await renderDocument(await parseAsync(bytes, options), options)));
+    const parsed = await parseAsync(bytes, options);
+    const drawCharts = await prepareCharts(parsed, bytes);
+    this.view.append(...(await renderDocument(parsed, options)));
+    drawCharts(this.view);
     const lineHeights = scaleLineHeights(this.view);
     for (const link of this.view.querySelectorAll('a[href]')) link.removeAttribute('href');
 

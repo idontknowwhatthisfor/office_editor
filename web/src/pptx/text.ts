@@ -211,7 +211,7 @@ export function bodyProps(chain: (Element | null | undefined)[]): BodyProps {
 const SERIF = /times|georgia|garamond|cambria|book antiqua|palatino|serif|minion|baskerville/i;
 const MONO = /courier|consolas|mono|menlo/i;
 
-export function fontFamily(name: string | undefined, ctx: Ctx): string {
+export function fontFamily(name: string | undefined, ctx: { theme: { majorFont: string; minorFont: string } }): string {
   let face = name ?? '+mn-lt';
   if (face.startsWith('+mj')) face = ctx.theme.majorFont;
   else if (face.startsWith('+mn')) face = ctx.theme.minorFont;

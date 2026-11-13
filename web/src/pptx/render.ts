@@ -5,6 +5,7 @@ import {
   type Ctx, type Fill,
 } from './drawing';
 import { adjustments, customOutline, presetOutline, type Outline } from './geometry';
+import { renderChart } from '../chart';
 import { renderTable } from './table';
 import { bodyProps, levelStyles, mergePara, overlay, renderText, type ParaStyle } from './text';
 
@@ -104,8 +105,11 @@ async function renderElement(el: Element, space: Space, ctx: Ctx, inh: Inherited
     case 'graphicFrame':
       return renderFrame(el, space, ctx, inh, isSlide);
     case 'AlternateContent': {
-      // Prefer the fallback: it holds content every reader understands (often a picture).
-      const pick = child(el, 'Fallback') ?? child(el, 'Choice');
+      // Prefer the fallback: it holds content every reader understands (often a picture). But
+      // newer charts (chartex) are drawn from their data rather than the fallback's picture.
+      const choice = child(el, 'Choice');
+      const chartEx = first(choice, 'graphicData')?.getAttribute('uri')?.includes('chartex');
+      const pick = chartEx ? choice : child(el, 'Fallback') ?? choice;
       let html = '';
       for (const c of children(pick)) html += await renderElement(c, space, ctx, inh, isSlide, groupFill);
       return html;
@@ -385,6 +389,13 @@ async function renderFrame(el: Element, space: Space, ctx: Ctx, inh: Inherited, 
     return renderPicture(withBox(pic, el), space, ctx, inh, false);
   }
   const kind = uri.endsWith('/chart') || uri.includes('chartex') ? 'chart' : 'object';
+  if (kind === 'chart') {
+    const rel = ctx.part.rels.get(relAttr(first(data, 'chart')));
+    const part = rel && !rel.external ? await ctx.deck.part(rel.target) : null;
+    const theme = { theme: ctx.theme, clrMap: ctx.clrMap, baseSize: 13.3, frame: false };
+    const svg = part ? renderChart(part.root, theme, box.w, box.h) : null;
+    if (svg) return `<div class="sp chart" style="${boxStyle(box)}">${svg}</div>`;
+  }
   ctx.missing.add(kind);
   return placeholderBox(box, kind);
 }

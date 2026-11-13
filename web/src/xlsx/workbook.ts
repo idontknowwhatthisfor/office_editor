@@ -1,4 +1,7 @@
+import type { ChartTheme } from '../chart';
 import { Package, all, child, children, first, relAttr } from '../ooxml';
+import { DEFAULT_THEME, readTheme } from '../pptx/deck';
+import { chartExtent, readDrawings, type Drawings } from './drawings';
 import { formatCode } from './format';
 
 // Reads what a viewer needs from an XLSX file: cell values as Excel last computed them (cached
@@ -78,8 +81,8 @@ export interface Sheet {
   showGrid: boolean;
   /** Sheet zoom as saved (1 = 100%). */
   zoom: number;
-  /** The sheet has charts, pictures or shapes (not shown). */
-  hasDrawings: boolean;
+  /** Charts on the sheet, and how many pictures and shapes (not shown) it has. */
+  drawings: Drawings;
   /** The sheet has Excel tables or pivot tables (rows and columns can't be inserted here). */
   hasTables: boolean;
   /** Master formulas of shared-formula groups. */
@@ -93,6 +96,9 @@ export interface SheetEntry {
   kind: 'worksheet' | 'chart' | 'other';
   path: string;
 }
+
+/** Excel's colour map: bg1/tx1… are the theme's light and dark colours. */
+const CLR_MAP: Record<string, string> = { bg1: 'lt1', tx1: 'dk1', bg2: 'lt2', tx2: 'dk2' };
 
 /** Empty rows and columns shown past the last used cell, as a spreadsheet shows more grid. */
 const PAD_ROWS = 30;
@@ -177,7 +183,9 @@ export class Workbook {
 
     const target = (suffix: string) => [...rels.values()].find((r) => r.type.endsWith(suffix))?.target;
     const themePath = target('/theme');
-    this.theme = new Theme(themePath ? await this.xml(themePath) : null);
+    const themeDoc = themePath ? await this.xml(themePath) : null;
+    this.theme = new Theme(themeDoc);
+    this.chartTheme = { theme: themeDoc ? readTheme(themeDoc) : DEFAULT_THEME, clrMap: CLR_MAP, baseSize: 10, frame: true };
     const stylesPath = target('/styles');
     this.readStyles(stylesPath ? await this.xml(stylesPath) : null);
     const stringsPath = target('/sharedStrings');
@@ -185,6 +193,16 @@ export class Workbook {
   }
 
   private theme = new Theme(null);
+  /** The theme as charts use it. */
+  chartTheme: ChartTheme = { theme: DEFAULT_THEME, clrMap: CLR_MAP, baseSize: 10, frame: true };
+
+  /** The chart(s) of a chart sheet. */
+  async chartSheet(index: number): Promise<Drawings> {
+    const entry = this.sheets[index];
+    const doc = await this.xml(entry.path);
+    const drawing = child(doc?.documentElement, 'drawing');
+    return drawing ? readDrawings(this.pkg, entry.path, relAttr(drawing)) : { charts: [], others: 0 };
+  }
   private fonts: Font[] = [];
   private palette = INDEXED.slice();
 
@@ -293,6 +311,15 @@ export class Workbook {
       maxCol = Math.max(maxCol, range.c1);
     }
 
+    // The grid reaches every chart, so the sheet scrolls to them.
+    const drawingEl = child(ws, 'drawing');
+    const drawings = drawingEl ? await readDrawings(this.pkg, entry.path, relAttr(drawingEl)) : { charts: [], others: 0 };
+    for (const chart of drawings.charts) {
+      const end = chartExtent(chart);
+      maxRow = Math.max(maxRow, end.row);
+      maxCol = Math.max(maxCol, end.col);
+    }
+
     const view = child(child(ws, 'sheetViews'), 'sheetView');
     const pane = child(view, 'pane');
     let frozenRows = 0;
@@ -339,7 +366,7 @@ export class Workbook {
       merges,
       showGrid: view?.getAttribute('showGridLines') !== '0' && view?.getAttribute('showGridLines') !== 'false',
       zoom: zoom >= 0.1 && zoom <= 4 ? zoom : 1,
-      hasDrawings: !!child(ws, 'drawing'),
+      drawings,
       hasTables: !!child(ws, 'tableParts') || entry.path.includes('pivot'),
       sharedFormulas,
     };

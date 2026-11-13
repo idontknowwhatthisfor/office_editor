@@ -1,10 +1,12 @@
 import '../docx/fonts.css';
 import './xlsx.css';
+import { renderChart } from '../chart';
 import { t } from '../i18n';
 import { showMessage } from '../message';
 import { registerEditor, setDirty } from '../save';
 import { menu, toast } from '../ui';
 import { numberText } from './calc';
+import { chartBox } from './drawings';
 import type { SheetEditor } from './edit';
 import { formatNumber, formatText, shrinkGeneral } from './format';
 import { shiftFormula } from './formula';
@@ -144,6 +146,13 @@ class XlsxViewer {
   private topCells = el('div', 'xlsx-cells');
   private leftCells = el('div', 'xlsx-cells');
   private bodyCells = el('div', 'xlsx-cells');
+  /** Charts over each layer of the grid (not redrawn while scrolling). */
+  private cornerCharts = el('div', 'xlsx-cells xlsx-charts');
+  private topCharts = el('div', 'xlsx-cells xlsx-charts');
+  private leftCharts = el('div', 'xlsx-cells xlsx-charts');
+  private bodyCharts = el('div', 'xlsx-cells xlsx-charts');
+  /** A chart sheet's chart, fitted to the screen. */
+  private chartView = el('div', 'xlsx-chart-sheet');
   private tabs = el('div', 'xlsx-tabs');
   private styleEl = document.createElement('style');
 
@@ -204,16 +213,17 @@ class XlsxViewer {
     this.notice.append(this.noticeText, close);
     this.notice.hidden = true;
 
-    this.corner.append(this.cornerCells);
-    this.top.append(this.corner, this.topCells);
-    this.left.append(this.leftCells);
-    this.body.append(this.left, this.bodyCells);
+    this.corner.append(this.cornerCells, this.cornerCharts);
+    this.top.append(this.corner, this.topCells, this.topCharts);
+    this.left.append(this.leftCells, this.leftCharts);
+    this.body.append(this.left, this.bodyCells, this.bodyCharts);
+    this.chartView.hidden = true;
     this.content.append(this.top, this.body);
     this.scroller.append(this.content);
     this.message.hidden = true;
     this.tabs.setAttribute('role', 'tablist');
     this.tabs.setAttribute('aria-label', t('sheets'));
-    view.append(this.styleEl, this.bar, this.notice, this.scroller, this.message, this.tabs);
+    view.append(this.styleEl, this.bar, this.notice, this.scroller, this.message, this.chartView, this.tabs);
     root.replaceChildren(view);
 
     this.styleEl.textContent = formatRules(book.formats, (f) => this.cssFamily(f));
@@ -239,9 +249,11 @@ class XlsxViewer {
     this.showBar();
     this.notice.hidden = true;
 
+    this.chartView.hidden = true;
     const entry = this.book.sheets[index];
+    if (entry.kind === 'chart' && (await this.showChartSheet(index))) return;
     if (entry.kind !== 'worksheet') {
-      this.showMessage(t(entry.kind === 'chart' ? 'chartSheet' : 'otherSheet'));
+      if (this.index === index) this.showMessage(t(entry.kind === 'chart' ? 'chartSheet' : 'otherSheet'));
       return;
     }
     const started = performance.now();
@@ -268,10 +280,58 @@ class XlsxViewer {
     this.scroller.scrollTop = saved?.top ?? 0;
     this.showBar();
     this.renderAll();
+    this.drawCharts();
     console.log(`sheet ${index} (${sheet.rows.length} rows) shown in ${Math.round(performance.now() - started)} ms`);
 
-    this.notice.hidden = !sheet.hasDrawings || this.dismissed.has(index);
+    this.notice.hidden = !sheet.drawings.others || this.dismissed.has(index);
     this.noticeText.textContent = t('drawingsHidden');
+  }
+
+  /** A chart sheet: its chart drawn to fill the screen. False if it has none that can be drawn. */
+  private async showChartSheet(index: number): Promise<boolean> {
+    let svg: string | null = null;
+    try {
+      const { charts } = await this.book.chartSheet(index);
+      const chart = charts[0];
+      if (chart) {
+        const size = chart.size ?? { w: 960, h: 640 };
+        svg = renderChart(chart.root, this.book.chartTheme, size.w, size.h);
+      }
+    } catch (e) {
+      console.error('chart sheet failed', e);
+    }
+    if (!svg || this.index !== index) return !!svg;
+    this.scroller.hidden = true;
+    this.message.hidden = true;
+    this.chartView.hidden = false;
+    // Drawn at the size Excel saved, then scaled (keeping its shape) to the screen.
+    this.chartView.innerHTML = svg.replace(/ width="[^"]*" height="[^"]*"/, ' width="100%" height="100%"');
+    return true;
+  }
+
+  /** The sheet's charts, each in the layer its top-left corner is in. */
+  private drawCharts(): void {
+    const sheet = this.sheet!;
+    const { colX, rowY, fr, fc } = this.g;
+    const z = this.zones();
+    const html = { corner: '', top: '', left: '', body: '' };
+    for (const chart of sheet.drawings.charts) {
+      const box = chartBox(chart, colX, rowY);
+      if (!box || box.w < 2 || box.h < 2) continue;
+      const svg = renderChart(chart.root, this.book.chartTheme, box.w, box.h);
+      if (!svg) continue;
+      const row = chart.from?.row ?? 0;
+      const col = chart.from?.col ?? 0;
+      const layer = row < fr ? (col < fc ? 'corner' : 'top') : col < fc ? 'left' : 'body';
+      // Zone positions are offset versions of the sheet's own coordinates.
+      const x = z[layer].x(0) + box.x;
+      const y = z[layer].y(0) + box.y;
+      html[layer] += `<div class="xlsx-chart" style="left:${x}px;top:${y}px;width:${box.w}px;height:${box.h}px">${svg}</div>`;
+    }
+    this.cornerCharts.innerHTML = html.corner;
+    this.topCharts.innerHTML = html.top;
+    this.leftCharts.innerHTML = html.left;
+    this.bodyCharts.innerHTML = html.body;
   }
 
   private showMessage(text: string): void {
@@ -369,11 +429,28 @@ class XlsxViewer {
   async printPages(): Promise<{ pages: HTMLElement[]; width: number; height: number }> {
     await this.fontsReady;
     const sheets: { index: number; sheet: Sheet; used: Range }[] = [];
+    /** Chart sheets, in workbook order with the worksheets (index → chart SVG). */
+    const chartPages = new Map<number, { svg: string; w: number; h: number }>();
     for (let index = 0; index < this.book.sheets.length; index++) {
       const entry = this.book.sheets[index];
-      if (entry.hidden || entry.kind !== 'worksheet') continue;
+      if (entry.hidden) continue;
+      if (entry.kind === 'chart') {
+        const chart = (await this.book.chartSheet(index).catch(() => null))?.charts[0];
+        const size = chart?.size ?? { w: 960, h: 640 };
+        const svg = chart ? renderChart(chart.root, this.book.chartTheme, size.w, size.h) : null;
+        if (svg) chartPages.set(index, { svg, ...size });
+        continue;
+      }
+      if (entry.kind !== 'worksheet') continue;
       const sheet = await this.book.sheet(index);
-      const used = usedRange(sheet, this.book.formats);
+      let used = usedRange(sheet, this.book.formats);
+      // Charts print too: take in the cells they cover.
+      for (const chart of sheet.drawings.charts) {
+        const end = chart.to ?? chart.from;
+        if (!end) continue;
+        used ??= { r0: 0, c0: 0, r1: 0, c1: 0 };
+        used = { ...used, r1: Math.max(used.r1, end.row), c1: Math.max(used.c1, end.col) };
+      }
       if (used) sheets.push({ index, sheet, used });
     }
     const usedWidth = (sheet: Sheet, used: Range) => {
@@ -389,7 +466,26 @@ class XlsxViewer {
     const height = landscape ? A4.w : A4.h;
 
     const pages: HTMLElement[] = [];
+    const chartPage = (index: number) => {
+      const chart = chartPages.get(index);
+      if (!chart) return;
+      // The chart scaled to fit inside the margins, centred.
+      const scale = Math.min((width - 2 * MX) / chart.w, (height - 2 * MY) / chart.h);
+      const page = el('div', 'print-page xlsx-print-page');
+      page.style.width = `${width}px`;
+      page.style.height = `${height}px`;
+      const box = el('div', 'xlsx-cells');
+      box.style.cssText = `left:${(width - chart.w * scale) / 2 / scale}px;top:${MY / scale}px;width:${chart.w}px;height:${chart.h}px;zoom:${scale}`;
+      box.innerHTML = chart.svg;
+      page.append(box);
+      pages.push(page);
+    };
+    let nextChart = 0;
+    const chartsBefore = (index: number) => {
+      for (; nextChart < index; nextChart++) chartPage(nextChart);
+    };
     for (const { index, sheet, used } of sheets) {
+      chartsBefore(index);
       this.index = index;
       this.sheet = sheet;
       this.sel = null;
@@ -400,9 +496,17 @@ class XlsxViewer {
       const sheetWidth = colX[used.c1 + 1];
       const scale = Math.min(1, (width - 2 * MX) / sheetWidth);
       const band = (height - 2 * MY) / scale;
+      const charts = sheet.drawings.charts
+        .map((chart) => ({ chart, box: chartBox(chart, colX, rowY) }))
+        .filter((c): c is { chart: typeof c.chart; box: NonNullable<typeof c.box> } => !!c.box && c.box.w > 1 && c.box.h > 1);
       for (let r = 0; r <= used.r1;) {
         let end = r;
         while (end < used.r1 && rowY[end + 2] - rowY[r] <= band) end++;
+        // Don't cut a chart in two if starting the page before it lets it fit whole.
+        for (const { chart, box } of charts) {
+          const from = chart.from?.row ?? 0;
+          if (from > r && from <= end && box.y + box.h > rowY[end + 1] && box.h <= band) end = Math.min(end, from - 1);
+        }
         const top = rowY[r];
         const zone: Zone = {
           rLo: r, rHi: end, cLo: 0, cHi: used.c1,
@@ -414,6 +518,13 @@ class XlsxViewer {
         cells.style.cssText = `left:${MX / scale}px;top:${MY / scale}px;width:${sheetWidth}px;height:${rowY[end + 1] - top}px;` +
           `zoom:${scale}`;
         cells.innerHTML = this.render(zone, r, end, 0, used.c1, false);
+        // Each chart prints on the page its top edge is on.
+        for (const { chart, box } of charts) {
+          const from = Math.min(chart.from?.row ?? 0, used.r1);
+          if (from < r || from > end) continue;
+          const svg = renderChart(chart.root, this.book.chartTheme, box.w, box.h);
+          if (svg) cells.insertAdjacentHTML('beforeend', `<div class="xlsx-chart" style="left:${box.x}px;top:${box.y - top}px;width:${box.w}px;height:${box.h}px">${svg}</div>`);
+        }
         const page = el('div', 'print-page xlsx-print-page');
         page.style.width = `${width}px`;
         page.style.height = `${height}px`;
@@ -422,6 +533,7 @@ class XlsxViewer {
         r = end + 1;
       }
     }
+    chartsBefore(this.book.sheets.length);
     if (!pages.length) {
       const page = el('div', 'print-page');
       page.style.width = `${width}px`;
@@ -851,6 +963,7 @@ class XlsxViewer {
     if (layout) this.layout(this.sheet);
     this.showBar();
     this.renderAll();
+    if (layout) this.drawCharts();
     setDirty(editor.changed);
     this.undoButton.hidden = this.redoButton.hidden = false;
     this.undoButton.disabled = !editor.canUndo;

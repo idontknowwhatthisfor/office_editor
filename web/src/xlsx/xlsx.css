@@ -140,8 +140,27 @@
 }
 
 .xlsx-message[hidden],
-.xlsx-scroll[hidden] {
+.xlsx-scroll[hidden],
+.xlsx-chart-sheet[hidden] {
   display: none;
+}
+
+/* Charts float over the cells; taps and pinches go through to the grid. */
+.xlsx-charts {
+  pointer-events: none;
+}
+
+.xlsx-chart {
+  position: absolute;
+}
+
+/* A chart sheet: its chart scaled to fit, on white like the grid. */
+.xlsx-chart-sheet {
+  flex: 1;
+  min-height: 0;
+  padding: 8px;
+  background: #fff;
+  color-scheme: only light;
 }
 
 /* The grid scrolls natively; pinch-zoom is handled in viewer.ts. */

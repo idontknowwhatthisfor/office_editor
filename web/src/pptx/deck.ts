@@ -42,7 +42,7 @@ export interface SlidePart extends Part {
   clrMap: Record<string, string>;
 }
 
-const DEFAULT_THEME: Theme = {
+export const DEFAULT_THEME: Theme = {
   colours: {
     dk1: '000000', lt1: 'FFFFFF', dk2: '44546A', lt2: 'E7E6E6', accent1: '4472C4', accent2: 'ED7D31',
     accent3: 'A5A5A5', accent4: 'FFC000', accent5: '5B9BD5', accent6: '70AD47', hlink: '0563C1', folHlink: '954F72',
@@ -192,7 +192,7 @@ function overrideMap(root: Element, base: Record<string, string>): Record<string
   return map;
 }
 
-function readTheme(doc: Document | null): Theme {
+export function readTheme(doc: Document | null): Theme {
   if (!doc) return DEFAULT_THEME;
   const colours = { ...DEFAULT_THEME.colours };
   for (const el of children(first(doc, 'clrScheme'))) {
