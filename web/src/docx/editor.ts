@@ -3,7 +3,7 @@ import { prepareCharts } from './charts';
 import JSZip from 'jszip';
 import { t } from '../i18n';
 import { registerEditor, setDirty, type SaveResult } from '../save';
-import { fontSizeMenu, ICON_FONT_SIZE } from '../ui';
+import { askFontSize, ICON_FONT_SIZE } from '../ui';
 import { fontsLoaded, GUTTER, scaleLineHeights } from './viewer';
 
 // Word editing (PRD M7), done in place on the file's own XML.
@@ -232,7 +232,7 @@ class DocxEditor {
     const sel = getSelection()!;
     const range = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
     const at = range?.startContainer instanceof Element ? range.startContainer : range?.startContainer.parentElement ?? p;
-    const pt = await fontSizeMenu((parseFloat(getComputedStyle(at).fontSize) * 72) / 96);
+    const pt = await askFontSize((parseFloat(getComputedStyle(at).fontSize) * 72) / 96);
     p.focus();
     if (!pt) return;
     if (range && !range.collapsed && p.contains(range.commonAncestorContainer)) {

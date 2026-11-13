@@ -4,7 +4,7 @@ import { renderChart } from '../chart';
 import { t } from '../i18n';
 import { showMessage } from '../message';
 import { registerEditor, setDirty } from '../save';
-import { fontSizeMenu, ICON_FONT_SIZE, menu, toast } from '../ui';
+import { askFontSize, ICON_FONT_SIZE, menu, toast } from '../ui';
 import { numberText } from './calc';
 import { chartBox } from './drawings';
 import type { SheetEditor } from './edit';
@@ -967,7 +967,7 @@ class XlsxViewer {
       return;
     }
     const cell = this.sheet.rows[sel.r0]?.get(sel.c0);
-    const pt = await fontSizeMenu((this.book.formats[cell?.xf ?? 0] ?? this.book.formats[0]).font.size);
+    const pt = await askFontSize((this.book.formats[cell?.xf ?? 0] ?? this.book.formats[0]).font.size);
     if (!pt || this.sel !== sel) return;
     editor.setFontSize(this.index, sel, pt);
     this.afterEdit(true);

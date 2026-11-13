@@ -1,7 +1,7 @@
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { t } from '../i18n';
 import { isDirty, registerEditor, setDirty, type SaveResult } from '../save';
-import { FONT_SIZES } from '../ui';
+import { fontSizeField, parseFontSize } from '../ui';
 import { COLOURS, editSvg, type Edit, type FormValue, type PageSpace } from './edits';
 
 // PDF editing (PRD M5): highlight and underline selected text, draw, add text, sign, rotate or
@@ -571,36 +571,35 @@ function textDialog(): Promise<{ text: string; size: number } | null> {
     const d = dialog(t('addText'));
     const area = el('textarea', 'pdf-dialog-text');
     area.rows = 3;
-    let size = lastTextSize;
-    // Font size in points (PDF units are points, so it is the size on the page).
-    const sizes = el('label', 'pdf-dialog-sizes');
-    const caption = el('span', '');
+    // Font size in points, typed in (PDF units are points, so it is the size on the page).
+    const { field, input, hint } = fontSizeField(lastTextSize);
+    field.classList.add('pdf-size-field');
+    const caption = el('span', 'pdf-size-caption');
     caption.textContent = t('fontSize');
-    const select = el('select', 'pdf-size-select');
-    for (const n of FONT_SIZES) {
-      const option = el('option', '');
-      option.value = String(n);
-      option.textContent = `${n} pt`;
-      option.selected = n === size;
-      select.append(option);
-    }
+    field.prepend(caption);
     // A preview in the box, within reason for a phone screen.
-    const preview = () => (area.style.fontSize = `${Math.min(Math.max(size, 10), 32)}px`);
-    select.onchange = () => {
-      size = Number(select.value);
-      preview();
+    const preview = () => {
+      const n = parseFontSize(input.value);
+      if (n) area.style.fontSize = `${Math.min(Math.max(n, 10), 32)}px`;
     };
+    input.addEventListener('input', preview);
     preview();
-    sizes.append(caption, select);
     d.box.insertBefore(area, d.actions);
-    d.box.insertBefore(sizes, d.actions);
+    d.box.insertBefore(field, d.actions);
+    d.box.insertBefore(hint, d.actions);
     d.actions.append(
       textButton(t('cancel'), () => { d.close(); resolve(null); }),
       textButton(t('add'), () => {
         const text = area.value.replace(/\s+$/, '');
+        const size = parseFontSize(input.value);
+        if (text && size === null) {
+          hint.classList.add('error');
+          input.focus();
+          return;
+        }
         d.close();
-        if (text) lastTextSize = size;
-        resolve(text ? { text, size } : null);
+        if (text && size) lastTextSize = size;
+        resolve(text && size ? { text, size } : null);
       }, true),
     );
     area.focus();

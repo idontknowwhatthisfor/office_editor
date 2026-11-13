@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import { t } from '../i18n';
 import { child, children } from '../ooxml';
 import { registerEditor, setDirty, type SaveResult } from '../save';
-import { fontSizeMenu, ICON_FONT_SIZE, toast } from '../ui';
+import { askFontSize, ICON_FONT_SIZE, toast } from '../ui';
 import { Deck } from './deck';
 import { editableShapes, type RenderedSlide } from './render';
 import { ShapeTool } from './shapes';
@@ -232,7 +232,7 @@ export class PptxEditor {
     const current = at ? (parseFloat(getComputedStyle(at).fontSize) * 72) / 96 / scale : undefined;
     // The dialog takes the focus; that isn't leaving the box (which would redraw the slide).
     this.inDialog = true;
-    const pt = await fontSizeMenu(current).finally(() => (this.inDialog = false));
+    const pt = await askFontSize(current).finally(() => (this.inDialog = false));
     if (!pt) {
       p?.focus();
       return;

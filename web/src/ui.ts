@@ -46,11 +46,11 @@ function button(label: string, onClick: () => void, primary = false): HTMLButton
 }
 
 /** A list of choices; resolves with the chosen value, or null if cancelled. */
-export function menu<T extends string>(title: string, items: [T, string][], className = ''): Promise<T | null> {
+export function menu<T extends string>(title: string, items: [T, string][]): Promise<T | null> {
   return new Promise((resolve) => {
     const d = box(title);
     const list = document.createElement('div');
-    list.className = `ui-menu ${className}`.trim();
+    list.className = 'ui-menu';
     for (const [value, label] of items) list.append(button(label, () => { d.close(); resolve(value); }));
     d.panel.insertBefore(list, d.actions);
     d.actions.append(button(t('cancel'), () => { d.close(); resolve(null); }));
@@ -67,15 +67,71 @@ export function confirm(title: string, body: string, ok: string): Promise<boolea
   });
 }
 
-/** Font sizes offered by the editors, in points (as Office's size list). */
-export const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 54, 60, 66, 72];
+/** Font sizes the editors accept, in points (Excel's limit is 409, Word's 1638). */
+export const FONT_SIZE_MIN = 1;
+export const FONT_SIZE_MAX = 400;
 
-/** Asks for a font size in points; `current` (if known) is shown in the title. */
-export async function fontSizeMenu(current?: number): Promise<number | null> {
-  const now = current ? Math.round(current * 2) / 2 : undefined;
-  const title = now ? t('fontSizeNow', { n: now }) : t('fontSize');
-  const choice = await menu(title, FONT_SIZES.map((n) => [String(n), n === now ? `✓ ${n}` : String(n)] as [string, string]), 'ui-sizes');
-  return choice ? Number(choice) : null;
+/** A typed font size in points (a decimal comma is fine), to the half point; null if not one. */
+export function parseFontSize(text: string): number | null {
+  const n = Number(text.trim().replace(',', '.'));
+  if (!text.trim() || !Number.isFinite(n) || n < FONT_SIZE_MIN || n > FONT_SIZE_MAX) return null;
+  return Math.round(n * 2) / 2;
+}
+
+/** A text field for a font size in points, with a "pt" label and the allowed range below it. */
+export function fontSizeField(value?: number): { field: HTMLElement; input: HTMLInputElement; hint: HTMLElement } {
+  const field = document.createElement('label');
+  field.className = 'ui-field';
+  const input = document.createElement('input');
+  input.className = 'ui-number';
+  input.type = 'text';
+  input.inputMode = 'decimal';
+  input.enterKeyHint = 'done';
+  input.autocomplete = 'off';
+  input.setAttribute('aria-label', t('fontSize'));
+  if (value) input.value = String(Math.round(value * 2) / 2);
+  const unit = document.createElement('span');
+  unit.textContent = 'pt';
+  field.append(input, unit);
+  const hint = document.createElement('p');
+  hint.className = 'ui-hint';
+  hint.textContent = t('fontSizeRange', { min: FONT_SIZE_MIN, max: FONT_SIZE_MAX });
+  input.addEventListener('input', () => hint.classList.remove('error'));
+  return { field, input, hint };
+}
+
+/** Asks for a font size in points, typed in; `current` (if known) fills the field. */
+export function askFontSize(current?: number): Promise<number | null> {
+  return new Promise((resolve) => {
+    const d = box(t('fontSize'));
+    const { field, input, hint } = fontSizeField(current);
+    d.panel.insertBefore(field, d.actions);
+    d.panel.insertBefore(hint, d.actions);
+    const cancel = () => {
+      d.close();
+      resolve(null);
+    };
+    const ok = () => {
+      const n = parseFontSize(input.value);
+      if (n === null) {
+        hint.classList.add('error');
+        input.focus();
+        return;
+      }
+      d.close();
+      resolve(n);
+    };
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        ok();
+      } else if (e.key === 'Escape') cancel();
+    };
+    d.actions.append(button(t('cancel'), cancel), button(t('done'), ok, true));
+    // Ready to type over: the current size is selected.
+    input.focus();
+    input.select();
+  });
 }
 
 /** Material Symbols "format_size" (Apache-2.0), for a toolbar button. */

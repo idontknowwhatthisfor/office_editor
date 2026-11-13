@@ -243,15 +243,11 @@ body.pdf-drawing .pdf-edit-layer {
   font-size: 16px;
 }
 
-.pdf-dialog-sizes,
 .pdf-dialog-menu {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   margin-top: 12px;
-}
-
-.pdf-dialog-menu {
-  flex-direction: column;
 }
 
 .pdf-dialog-menu .pdf-text-button {
@@ -284,31 +280,13 @@ body.pdf-drawing .pdf-edit-layer {
   color: var(--surface);
 }
 
-.pdf-dialog-sizes {
-  align-items: center;
-  justify-content: space-between;
-  color: var(--text);
+.pdf-size-field {
+  margin-top: 12px;
 }
 
-.pdf-size-select {
-  min-height: 40px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-}
-
-.pdf-dialog-sizes .pdf-text-button {
+/* The caption takes the room; the number and "pt" sit at the end. */
+.pdf-size-caption {
   flex: 1;
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-
-.pdf-dialog-sizes .pdf-text-button.active {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 .pdf-sign-pad {

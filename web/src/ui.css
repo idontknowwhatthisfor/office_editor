@@ -62,15 +62,43 @@
   flex-direction: column;
 }
 
-.ui-menu.ui-sizes {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 2px;
+.ui-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 16px;
 }
 
-.ui-sizes .ui-button {
-  text-align: center;
+.ui-number {
+  width: 7em;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 18px;
   font-variant-numeric: tabular-nums;
+}
+
+.ui-number:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* (Also used in the PDF editor's own dialogs.) */
+p.ui-hint {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Shown in the error colour when what was typed isn't a size. */
+p.ui-hint.error {
+  color: #d93025;
 }
 
 .ui-actions {

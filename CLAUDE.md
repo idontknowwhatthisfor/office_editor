@@ -65,7 +65,8 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     `fullCalcOnLoad` set, `calcChain.xml` removed. Formulas with functions it lacks keep Excel's
     value. Sheets with Excel tables can't have rows/columns inserted (would break the table).
   - `src/ui.ts` — dialogs, menus, toast (used by the spreadsheet editor), and the font size
-    picker every editor uses (`fontSizeMenu`, `FONT_SIZES`). Font size: Word and PowerPoint wrap
+    field every editor uses (`askFontSize`, `fontSizeField`, `parseFontSize`: a typed number,
+    1–400 pt, rounded to the half point, a decimal comma accepted). Font size: Word and PowerPoint wrap
     the selected text in a `data-sz` span (or mark the paragraph, with only a caret; a selected
     PowerPoint box changes all its text) and write `w:sz`/`w:szCs` (half-points, rPr in schema
     order) or `a:rPr sz` (1/100 pt); Excel adds a font and a cellXfs entry per (base format,
