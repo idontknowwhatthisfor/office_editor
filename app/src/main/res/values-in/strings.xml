@@ -35,4 +35,9 @@
     <string name="export_pdf">Ekspor ke PDF</string>
     <string name="export_save_first">Simpan perubahan dulu, lalu ekspor.</string>
     <string name="export_failed">File ini tidak bisa diekspor</string>
+    <string name="about">Tentang &amp; lisensi</string>
+    <string name="about_version">Versi %1$s</string>
+    <string name="about_privacy">Berfungsi offline. Tanpa akses internet, tanpa akun, tanpa analitik: file Anda tidak pernah keluar dari perangkat ini kecuali Anda membagikannya.</string>
+    <string name="open_source_licences">Lisensi sumber terbuka</string>
+    <string name="open_source_licences_body">Aplikasi ini dibuat dengan perangkat lunak sumber terbuka berikut. Ketuk salah satu untuk membaca lisensinya.</string>
 </resources>

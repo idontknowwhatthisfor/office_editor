@@ -18,6 +18,10 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
   - `ViewerActivity` — one document; also the target of "Open with" (`ACTION_VIEW`) and share-to
     (`ACTION_SEND`). Top bar is native; everything below it is the WebView.
   - `DocumentWebView.kt` — WebView setup and the JS bridge (`window.OfficeBridge`).
+  - `AboutActivity` — About & licences (ⓘ on the home screen): version, privacy note, and every
+    bundled component's licence text, read from `assets/web/licences.json`. That file is built
+    by `web/scripts/collect-licences.mjs` (runs before every web build) from the installed
+    packages; add any new runtime dependency to its lists.
   - `Documents.kt` (format detection), `RecentFiles.kt` (SharedPreferences). Files lent by
     another app ("Open with") lose their access when the viewer closes, so the recent list keeps
     a private copy of those in `files/recent/`; picker files use a persisted URI permission.
@@ -176,4 +180,8 @@ options → "Verify apps over USB"); don't change that setting from here.
 | pdf-lib (+ @pdf-lib/standard-fonts, @pdf-lib/upng, pako, tslib) | MIT (pako: MIT and Zlib) | Writing edited PDFs |
 | jszip (dependency of docx-preview) | MIT (dual MIT / GPL-3.0; used under MIT) | Reading the DOCX and XLSX zip |
 | @fontsource/tinos, arimo, carlito (font files) | OFL-1.1 as packaged | Stand-ins for Times New Roman, Arial, Calibri |
-| AndroidX (Compose, Activity, WebKit) | Apache-2.0 | Native shell |
+| PDF.js runtime files (`public/pdfjs`): image decoders, colour management, form sandbox, fonts, character maps | Apache-2.0, BSD-2/3-Clause, MIT, CC0; Liberation Sans fonts: GPL-2.0 with font exception | PDF rendering |
+| jszip's dependencies (lie, immediate, setimmediate, readable-stream…) | MIT / ISC | Bundled with jszip |
+| AndroidX (Compose, Activity, WebKit), Kotlin, kotlinx.coroutines | Apache-2.0 | Native shell |
+
+All of them are listed, with their full licence text, in the app's About & licences screen.

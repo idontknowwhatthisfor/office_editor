@@ -36,4 +36,9 @@
     <string name="export_pdf">Export as PDF</string>
     <string name="export_save_first">Save your changes first, then export.</string>
     <string name="export_failed">Couldn\'t export this file</string>
+    <string name="about">About &amp; licences</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_privacy">Works offline. No internet access, no accounts, no analytics: your files never leave this device unless you share them.</string>
+    <string name="open_source_licences">Open-source licences</string>
+    <string name="open_source_licences_body">This app is built with the following open-source software. Tap one to read its licence.</string>
 </resources>

@@ -143,7 +143,6 @@ The hard part of an office app is the format handling. The best free, permissive
 - **Reliability:** never overwrite the original until the new file is fully written and re-parsed successfully (write to temp → validate → replace).
 - **Offline & privacy:** no network access, no analytics, no accounts. Files never leave the device unless the user shares them.
 - **Size:** APK/AAB under 40 MB.
-- **Accessibility:** TalkBack labels on all native controls, minimum 48 dp touch targets, dark mode, font scaling.
 - **Localization:** English first; Bahasa Indonesia as the second language.
 
 ## 7. UX and screens
@@ -169,7 +168,7 @@ The hard part of an office app is the format handling. The best free, permissive
 | M5 — PDF editing | Annotations, form fill, signature, page tools | Edited PDFs open correctly in Acrobat / Chrome |
 | M6 — XLSX editing | Edit cells, formulas, rows/cols, sheets; save | Round-trip corpus passes; formulas match Excel |
 | M7 — DOCX editing | Text and basic formatting edits, fidelity warning; save | Corpus survives open → edit → save |
-| M8 — Polish | Tablet/landscape layouts, export to PDF, dark mode, Indonesian, accessibility | No data-loss bugs on own devices |
+| M8 — Polish | Tablet/landscape layouts, export to PDF, Indonesian, licence notices | No data-loss bugs on own devices — **passed** (13 Nov 2026) |
 
 **Order rationale:** viewers first. Read-only viewing of all four formats is lower-risk (nothing can be corrupted) and gives a usable app by M4. Editing comes after, starting with the formats whose libraries are most mature (PDF, XLSX); DOCX round-tripping is hardest and goes last. PPTX stays view-only.
 

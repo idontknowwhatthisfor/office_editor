@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -91,6 +92,7 @@ class MainActivity : ComponentActivity() {
                     onOpenPicker = { picker.launch(DocFormat.mimeTypes) },
                     onNewDocument = { newDocument.launch(getString(R.string.new_document_name) + ".docx") },
                     onNewSpreadsheet = { newSpreadsheet.launch(getString(R.string.new_spreadsheet_name) + ".xlsx") },
+                    onAbout = { startActivity(Intent(this, AboutActivity::class.java)) },
                     onOpen = { open(it.uri, it.format.mime) },
                     onRemove = {
                         recents.remove(it.uri)
@@ -152,6 +154,7 @@ private fun HomeScreen(
     onOpenPicker: () -> Unit,
     onNewDocument: () -> Unit,
     onNewSpreadsheet: () -> Unit,
+    onAbout: () -> Unit,
     onOpen: (RecentFile) -> Unit,
     onRemove: (RecentFile) -> Unit,
 ) {
@@ -159,6 +162,11 @@ private fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
+                actions = {
+                    IconButton(onClick = onAbout) {
+                        Icon(Icons.Outlined.Info, contentDescription = stringResource(R.string.about))
+                    }
+                },
                 expandedHeight = appBarHeight(),
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
             )
