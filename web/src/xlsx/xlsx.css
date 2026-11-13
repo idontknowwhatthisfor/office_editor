@@ -48,6 +48,43 @@
   user-select: text;
 }
 
+.xlsx-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  margin: -6px 0;
+  padding: 0 8px;
+  border: 1px solid var(--xlsx-accent);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+.xlsx-input[hidden],
+.xlsx-text[hidden],
+.xlsx-bar-button[hidden] {
+  display: none;
+}
+
+.xlsx-bar-button {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  margin: -10px 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 20px;
+  background: none;
+  color: var(--text);
+}
+
+.xlsx-bar-button:disabled {
+  opacity: 0.35;
+}
+
 .xlsx-text.open {
   max-height: 30vh;
   overflow: auto;

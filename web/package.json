@@ -21,6 +21,7 @@
     "ssf": "0.11.2"
   },
   "devDependencies": {
+    "@types/node": "22.20.5",
     "typescript": "7.0.2",
     "vite": "8.3.8"
   }

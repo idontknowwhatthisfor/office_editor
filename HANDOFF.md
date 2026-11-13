@@ -1,6 +1,6 @@
 # Handoff — OfficeEditor
 
-Written 12 Nov 2026; updated at the end of the second session (M3). Read `CLAUDE.md` first (architecture,
+Written 12 Nov 2026; updated 13 Nov 2026 at the end of the second session (M3–M7). Read `CLAUDE.md` first (architecture,
 build commands, rules from the PRD); this file is the state of the work and what to do next.
 
 ## Where things stand
@@ -11,8 +11,11 @@ build commands, rules from the PRD); this file is the state of the work and what
 | M1 PDF viewer | Working on the phone: scroll, pinch-zoom, text selection, search, thumbnails. Tested on generated samples, one Word-exported PDF and a 700 MB / 1,191-page textbook. |
 | M2 DOCX viewer | Working on the phone in Word-style page layout. Tested on one real Word file (`test-files/FallSafe_Essay_v5-2.docx`) and two synthetic ones. |
 | M3 XLSX viewer | Done; the owner checked it on the phone (session 2). |
-| M4 PPTX viewer | Working on the phone (session 2): text, shapes, pictures, tables, groups, backgrounds; swipe, thumbnails, double-tap/pinch zoom. Compared slide by slide with PowerPoint's own PDF of two decks. **Needs the owner's check and real decks.** |
-| M5–M8 | Not started. |
+| M4 PPTX viewer | Done; the owner checked it (session 2). |
+| M5 PDF editing | Working (session 2): highlight/underline selected text, draw, text boxes, signature (kept for reuse), rotate/delete pages, form filling, undo/redo. Saved files checked with pdf-lib, macOS PDFKit and PDF.js; not yet in Chrome/Acrobat. |
+| M6 XLSX editing | Working (session 2): edit values and formulas with recalculation, insert/delete rows and columns, undo/redo. Saved files open in Excel without repair and Excel's recalculated values equal ours. |
+| M7 DOCX editing | Working (session 2): text, Enter/Backspace across paragraphs, bold/italic/underline, alignment, headings, bullets/numbering, undo/redo. Saved files open in Word; untouched paragraphs stay byte-identical. |
+| M8 Polish | Not started. |
 
 Commits on `main`, nothing pushed (no remote).
 
@@ -26,9 +29,18 @@ Commits on `main`, nothing pushed (no remote).
 
 ## Next
 
-- Owner checks M4 on the phone (pinch-zoom by finger, real decks). Every viewer is in place, so
-  the PRD's "first usable viewer build" is reached once that passes.
-- Then M5 (PDF annotate, fill and sign) per PRD §8.
+- Owner checks M5–M7 on the phone (the checklist given at the end of session 2).
+- Then M8 (polish: tablet/landscape, export to PDF, dark mode, accessibility) and the P1
+  items listed under "Open items".
+
+## Saving (all editors)
+
+Shell: Save button appears when the page reports changes; dialog offers Replace original (only
+when the app may write the file: picker files, now persisted with write permission) or Save as
+copy (system save picker; the copy then opens). Leaving with changes asks Save / Discard.
+The original is copied to `cache/backup/original` before being replaced and restored if the
+write fails. Web: `src/save.ts`. Reloading the viewer after a save is the one navigation
+`DocumentWebView` allows.
 
 ## Open items
 
@@ -57,6 +69,37 @@ Commits on `main`, nothing pushed (no remote).
   notice belongs to M6.
 - The comparison against Excel (`excel_text_dump.applescript`, then the formats in a browser
   console) matched 9,082 of 9,087 cells; the rest are the Mac's Indonesian time separator.
+
+**PDF editing** (`web/src/pdf/editor.ts`, `write.ts`)
+- Not done: merge/split PDFs (P1), moving or deleting one annotation (only undo), editing
+  annotations that were already in the file, colour/thickness choice, signature fields
+  (signatures are drawn into the page, not digitally signed).
+- Text boxes use Helvetica: characters outside Windows-1252 are saved as "?". On a page with
+  /Rotate, a text box is written along the page's own axis (looks turned).
+- PDFs over 150 MB can't be edited (saving rewrites the whole file in memory). Encrypted PDFs
+  can't be saved (message shown).
+- Saved files not yet opened in Chrome's or Acrobat's viewer (no PDFium/Acrobat here).
+
+**DOCX editing** (`web/src/docx/editor.ts`)
+- The edit view is reflowed to the screen at real size, not page layout (scaled pages are too
+  small to edit on a phone); after saving, the viewer shows page layout again.
+- Locked (shown greyed, kept unchanged): paragraphs with pictures, links, fields (TOC, page
+  numbers), comments, tracked changes, text boxes. Paragraphs can't be joined across table
+  cells. A warning lists such content before editing.
+- Not done (P1): font size/colour, insert image/table, links, find & replace, word count.
+  Lists are one level only; heading look in the edit view is a preview.
+
+**XLSX editing** (`web/src/xlsx/edit.ts`, `calc.ts`)
+- Functions not implemented (anything outside calc.ts's list: e.g. INDIRECT, financial
+  functions other than PMT, statistical beyond MEDIAN/STDEV, array/dynamic functions like
+  FILTER, SORT, UNIQUE) keep the value Excel saved; a notice says so and Excel recalculates
+  on open (`fullCalcOnLoad`).
+- Not done (P1): cell formatting, sort/filter, add/rename/delete sheets. New cells get the
+  default style; a date typed into a cell not formatted as a date stays text.
+- Inserting/deleting rows or columns: blocked on sheets with Excel tables; pictures/charts do
+  not move with the cells; conditional formats/validations in *other* sheets that point at
+  the changed sheet are not shifted.
+- Numbers with a decimal comma are read as such when the phone's language uses one (id, de…).
 
 **PPTX viewer** (`web/src/pptx/`)
 - Not drawn: charts (placeholder + notice; their cached values are in `ppt/charts/*.xml`, so a

@@ -80,6 +80,8 @@ export interface Sheet {
   zoom: number;
   /** The sheet has charts, pictures or shapes (not shown). */
   hasDrawings: boolean;
+  /** The sheet has Excel tables or pivot tables (rows and columns can't be inserted here). */
+  hasTables: boolean;
   /** Master formulas of shared-formula groups. */
   sharedFormulas: Map<number, { f: string; r: number; c: number }>;
 }
@@ -107,7 +109,11 @@ export class Workbook {
   /** Excel's "maximum digit width" of the default font in px: the unit of column widths. */
   digitWidth = 7;
   defaultFont!: Font;
-  private pkg!: Package;
+  pkg!: Package;
+  /** Path of workbook.xml in the package. */
+  bookPath = 'xl/workbook.xml';
+  /** Defined names (`TaxRate`, print areas…): name, sheet it is local to (or null), formula. */
+  definedNames: { name: string; sheet: number | null; formula: string }[] = [];
   private strings: (string | Run[])[] = [];
   private loaded = new Map<number, Promise<Sheet>>();
 
@@ -141,6 +147,11 @@ export class Workbook {
       ?? 'xl/workbook.xml';
     const book = await this.xml(bookPath);
     if (!book) throw new Error('no workbook part');
+    this.bookPath = bookPath;
+    for (const dn of all(book, 'definedName')) {
+      const local = dn.getAttribute('localSheetId');
+      this.definedNames.push({ name: dn.getAttribute('name') ?? '', sheet: local === null ? null : Number(local), formula: dn.textContent ?? '' });
+    }
     const rels = await this.rels(bookPath);
 
     const pr = first(book, 'workbookPr');
@@ -329,6 +340,7 @@ export class Workbook {
       showGrid: view?.getAttribute('showGridLines') !== '0' && view?.getAttribute('showGridLines') !== 'false',
       zoom: zoom >= 0.1 && zoom <= 4 ? zoom : 1,
       hasDrawings: !!child(ws, 'drawing'),
+      hasTables: !!child(ws, 'tableParts') || entry.path.includes('pivot'),
       sharedFormulas,
     };
   }

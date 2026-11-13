@@ -45,6 +45,14 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     for byte. Paragraphs holding anything but plain text runs are locked. Bold/italic/underline
     are read back from computed styles; alignment, heading style and bullets/numbering are
     paragraph properties (missing heading styles and list definitions are added).
+  - `src/xlsx/edit.ts` + `calc.ts` — spreadsheet editing (M6). `calc.ts` is our own formula
+    engine (parser, ~120 common functions, reference shifting); it matched Excel on every
+    formula of both sample workbooks. `edit.ts` keeps all sheets in memory, recalculates the
+    dependents of an edit, inserts/deletes rows and columns (shifting formulas, merges, ranges in
+    every sheet), undo/redo, and writes back into the sheet XML: values as inline strings,
+    `fullCalcOnLoad` set, `calcChain.xml` removed. Formulas with functions it lacks keep Excel's
+    value. Sheets with Excel tables can't have rows/columns inserted (would break the table).
+  - `src/ui.ts` — dialogs, menus, toast (used by the spreadsheet editor).
   - `src/pptx/` — read-only presentation viewer, drawn by our own code (pptx-preview, the PRD's
     candidate, ships only minified code with no source or licence file). `deck.ts` loads
     slide → layout → master → theme; `render.ts` draws a slide as HTML (shapes as SVG outlines
@@ -60,6 +68,9 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
   and `make_pptx_native.applescript` make decks that PowerPoint has saved, plus PowerPoint's PDF
   of each as the reference rendering. PowerPoint asks once for access to `test-files/`.
   `word_to_pdf.sh` opens a .docx in Word and saves Word's PDF of it (checks edited files).
+  In dev, a page can POST a file it built to `/__dev-save?name=x` (vite.config.ts); it lands in
+  `test-files/out/` for checking in Word/Excel/PowerPoint (open with `open -a`, which needs no
+  sandbox prompt).
 
 **How edits are saved:** the shell owns the Save button and dialog (`ViewerActivity`); an editor
 reports unsaved changes with `OfficeBridge.setDirty`. On Save the shell calls

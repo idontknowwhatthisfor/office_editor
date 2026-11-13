@@ -89,6 +89,19 @@ const en = {
   embeddedObjects: 'embedded objects',
   equations: 'equations',
   comments: 'comments',
+  cellContents: 'Cell contents',
+  tapCellFirst: 'Tap a cell first.',
+  formulaError: 'There is a mistake in this formula.',
+  formulasStale: "Some formulas use functions this app can't calculate yet; they show their old values until the file is opened in Excel.",
+  rowN: 'Row {n}',
+  columnN: 'Column {n}',
+  insertAbove: 'Insert row above',
+  insertBelow: 'Insert row below',
+  deleteRow: 'Delete row',
+  insertLeft: 'Insert column left',
+  insertRight: 'Insert column right',
+  deleteColumn: 'Delete column',
+  tablesNoShift: "This sheet has Excel tables, so rows and columns can't be inserted or deleted here yet.",
 };
 
 const id: typeof en = {
@@ -182,6 +195,19 @@ const id: typeof en = {
   embeddedObjects: 'objek tersemat',
   equations: 'persamaan',
   comments: 'komentar',
+  cellContents: 'Isi sel',
+  tapCellFirst: 'Ketuk sebuah sel dulu.',
+  formulaError: 'Ada kesalahan dalam rumus ini.',
+  formulasStale: 'Beberapa rumus memakai fungsi yang belum bisa dihitung aplikasi ini; nilainya tetap yang lama sampai file dibuka di Excel.',
+  rowN: 'Baris {n}',
+  columnN: 'Kolom {n}',
+  insertAbove: 'Sisipkan baris di atas',
+  insertBelow: 'Sisipkan baris di bawah',
+  deleteRow: 'Hapus baris',
+  insertLeft: 'Sisipkan kolom di kiri',
+  insertRight: 'Sisipkan kolom di kanan',
+  deleteColumn: 'Hapus kolom',
+  tablesNoShift: 'Lembar ini berisi tabel Excel, jadi baris dan kolom belum bisa disisipkan atau dihapus di sini.',
 };
 
 const strings = /^(id|in)\b/i.test(navigator.language) ? id : en;

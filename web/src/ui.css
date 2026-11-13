@@ -1,0 +1,85 @@
+/* Dialogs, menus and the toast of ui.ts. */
+
+.ui-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 72px);
+  z-index: 30;
+  max-width: calc(100vw - 32px);
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgb(32 33 36 / 0.92);
+  color: #fff;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.ui-toast.show {
+  opacity: 1;
+}
+
+.ui-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.ui-dialog {
+  width: min(100%, 380px);
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.ui-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.ui-dialog p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.ui-menu {
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.ui-button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 22px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.ui-button.primary {
+  background: var(--accent);
+  color: var(--surface);
+}

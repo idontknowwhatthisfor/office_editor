@@ -2,6 +2,10 @@ import '../docx/fonts.css';
 import './xlsx.css';
 import { t } from '../i18n';
 import { showMessage } from '../message';
+import { registerEditor, setDirty } from '../save';
+import { menu, toast } from '../ui';
+import { numberText } from './calc';
+import type { SheetEditor } from './edit';
 import { formatNumber, formatText, shrinkGeneral } from './format';
 import { shiftFormula } from './formula';
 import { Workbook, encodeCol, type Cell, type CellFormat, type Font, type Range, type Sheet } from './workbook';
@@ -82,6 +86,13 @@ class XlsxViewer {
   private bar = el('div', 'xlsx-bar');
   private barRef = el('div', 'xlsx-ref');
   private barText = el('div', 'xlsx-text');
+  /** Cell editor (shown in place of barText while typing). */
+  private input = el('input', 'xlsx-input');
+  private undoButton = el('button', 'xlsx-bar-button');
+  private redoButton = el('button', 'xlsx-bar-button');
+  private editor: SheetEditor | null = null;
+  /** The editor's text when editing began, to tell whether anything was changed. */
+  private editStart = '';
   private notice = el('div', 'xlsx-notice');
   private noticeText = el('span');
   private scroller = el('div', 'xlsx-scroll');
@@ -117,8 +128,33 @@ class XlsxViewer {
   constructor(root: HTMLElement, private book: Workbook) {
     const view = el('div', 'xlsx');
     this.barText.setAttribute('aria-live', 'polite');
-    this.bar.append(this.barRef, this.barText);
-    this.barText.onclick = () => this.barText.classList.toggle('open');
+    this.bar.append(this.barRef, this.barText, this.input, this.undoButton, this.redoButton);
+    this.barText.onclick = () => void this.startEdit();
+    this.input.hidden = true;
+    this.input.enterKeyHint = 'done';
+    this.input.autocapitalize = 'off';
+    this.input.setAttribute('autocomplete', 'off');
+    this.input.setAttribute('aria-label', t('cellContents'));
+    this.input.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.commit(1);
+      } else if (e.key === 'Escape') this.stopEdit();
+    };
+    this.input.onblur = () => {
+      if (!this.input.hidden) this.commit(0);
+    };
+    for (const [b, icon, label, action] of [
+      [this.undoButton, ICON_UNDO, t('undo'), () => this.history('undo')],
+      [this.redoButton, ICON_REDO, t('redo'), () => this.history('redo')],
+    ] as const) {
+      b.innerHTML = icon;
+      b.setAttribute('aria-label', label);
+      b.title = label;
+      b.hidden = true;
+      b.addEventListener('pointerdown', (e) => e.preventDefault());
+      b.onclick = action;
+    }
 
     const close = el('button', 'xlsx-notice-close');
     close.textContent = '×';
@@ -565,13 +601,138 @@ class XlsxViewer {
     const z = this.zoom;
     const vx = (clientX - rect.left) / z;
     const vy = (clientY - rect.top) / z;
-    if (vx < hdrW || vy < HDR_H) return;
+    if (vx < hdrW && vy < HDR_H) return;
+    if (vx < hdrW || vy < HDR_H) {
+      // A row number or column letter: insert or delete that row/column.
+      const axis = vx < hdrW ? 'row' : 'col';
+      const at = axis === 'row'
+        ? (vy < ht ? find(rowY, vy - HDR_H) : find(rowY, rowY[fr] + this.scroller.scrollTop / z + vy - ht))
+        : (vx < lw ? find(colX, vx - hdrW) : find(colX, colX[fc] + this.scroller.scrollLeft / z + vx - lw));
+      void this.headerMenu(axis, at);
+      return;
+    }
     const c = vx < lw ? find(colX, vx - hdrW) : find(colX, colX[fc] + this.scroller.scrollLeft / z + vx - lw);
     const r = vy < ht ? find(rowY, vy - HDR_H) : find(rowY, rowY[fr] + this.scroller.scrollTop / z + vy - ht);
     const merge = this.sheet.merges.find((m) => r >= m.r0 && r <= m.r1 && c >= m.c0 && c <= m.c1);
     this.sel = merge ?? { r0: r, c0: c, r1: r, c1: c };
     this.showBar();
     this.renderAll();
+  }
+
+  // ---------------------------------------------------------------- editing
+
+  private async ensureEditor(): Promise<SheetEditor> {
+    if (this.editor) return this.editor;
+    const { SheetEditor } = await import('./edit');
+    this.editor = await SheetEditor.open(this.book);
+    const editor = this.editor;
+    registerEditor({
+      fileName: 'workbook.xlsx',
+      produce: () => editor.write(),
+      saved: (result) => {
+        if (result.ok && result.mode === 'overwrite') location.reload();
+      },
+    });
+    return editor;
+  }
+
+  private async startEdit(): Promise<void> {
+    const sel = this.sel;
+    if (!sel || !this.sheet) {
+      toast(t('tapCellFirst'));
+      return;
+    }
+    const editor = await this.ensureEditor();
+    const cell = this.sheet.rows[sel.r0]?.get(sel.c0);
+    const shown = cell && cell.t !== 'z' ? this.display(cell, this.book.formats[cell.xf] ?? this.book.formats[0]).text : '';
+    this.input.value = this.editStart = editText(cell, editor.formula(this.index, sel.r0, sel.c0), shown);
+    this.barText.hidden = true;
+    this.input.hidden = false;
+    this.input.focus();
+    this.input.setSelectionRange(this.input.value.length, this.input.value.length);
+  }
+
+  private stopEdit(): void {
+    this.input.hidden = true;
+    this.barText.hidden = false;
+    this.input.blur();
+  }
+
+  /** Puts the typed value in the cell; `down` moves the selection on, as Enter does in Excel. */
+  private commit(down: number): void {
+    const sel = this.sel;
+    const editor = this.editor;
+    if (!sel || !editor || this.input.hidden) return;
+    const typed = this.input.value;
+    this.input.hidden = true;
+    this.barText.hidden = false;
+    if (typed !== this.editStart) {
+      try {
+        editor.setCell(this.index, sel.r0, sel.c0, typed);
+      } catch (e) {
+        if ((e as Error).message === 'formula') {
+          toast(t('formulaError'));
+          this.input.hidden = false;
+          this.barText.hidden = true;
+          this.input.focus();
+          return;
+        }
+        throw e;
+      }
+    }
+    if (down && this.sheet) {
+      const r = Math.min(this.sheet.rowHeights.length - 1, sel.r1 + down);
+      this.sel = { r0: r, r1: r, c0: sel.c0, c1: sel.c0 };
+    }
+    this.afterEdit(false);
+  }
+
+  private async headerMenu(axis: 'row' | 'col', at: number): Promise<void> {
+    if (!this.sheet) return;
+    const nCols = this.sheet.colWidths.length;
+    const nRows = this.sheet.rowHeights.length;
+    this.sel = axis === 'row' ? { r0: at, r1: at, c0: 0, c1: nCols - 1 } : { r0: 0, r1: nRows - 1, c0: at, c1: at };
+    this.showBar();
+    this.renderAll();
+    const label = axis === 'row' ? t('rowN', { n: at + 1 }) : t('columnN', { n: encodeCol(at) });
+    const choice = await menu(label, axis === 'row'
+      ? [['before', t('insertAbove')], ['after', t('insertBelow')], ['delete', t('deleteRow')]]
+      : [['before', t('insertLeft')], ['after', t('insertRight')], ['delete', t('deleteColumn')]]);
+    if (!choice) return;
+    const editor = await this.ensureEditor();
+    if (!editor.canShift(this.index)) {
+      toast(t('tablesNoShift'));
+      return;
+    }
+    if (choice === 'delete') editor.shift(this.index, axis, at, -1);
+    else editor.shift(this.index, axis, choice === 'before' ? at : at + 1, 1);
+    this.sel = null;
+    this.afterEdit(true);
+  }
+
+  private history(which: 'undo' | 'redo'): void {
+    const editor = this.editor;
+    if (!editor) return;
+    const op = which === 'undo' ? editor.undo() : editor.redo();
+    if (!op) return;
+    this.afterEdit(op.kind === 'shift');
+  }
+
+  /** Redraws after an edit; `layout` when rows or columns were added or removed. */
+  private afterEdit(layout: boolean): void {
+    const editor = this.editor;
+    if (!editor || !this.sheet) return;
+    if (layout) this.layout(this.sheet);
+    this.showBar();
+    this.renderAll();
+    setDirty(editor.changed);
+    this.undoButton.hidden = this.redoButton.hidden = false;
+    this.undoButton.disabled = !editor.canUndo;
+    this.redoButton.disabled = !editor.canRedo;
+    if (editor.stale.size) {
+      this.noticeText.textContent = t('formulasStale');
+      this.notice.hidden = false;
+    }
   }
 
   // ---------------------------------------------------------------- input
@@ -582,6 +743,7 @@ class XlsxViewer {
       if (this.sheet) this.renderAll();
     });
     this.scroller.addEventListener('click', (e) => this.select(e.clientX, e.clientY));
+    this.scroller.addEventListener('dblclick', () => void this.startEdit());
 
     // Pinch to zoom, around the point between the fingers.
     let pinch: { dist: number; zoom: number } | null = null;
@@ -719,6 +881,20 @@ async function loadFonts(fonts: string[]): Promise<void> {
   const loads = Promise.all(unique.map((f) => document.fonts.load(f).catch(() => [])));
   // Text is measured to decide where it overflows; wait (briefly) for the real fonts.
   await Promise.race([loads, new Promise((resolve) => setTimeout(resolve, 1500))]);
+}
+
+// Material Symbols paths (Apache-2.0).
+const svgIcon = (d: string) => `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="${d}"/></svg>`;
+const ICON_UNDO = svgIcon('M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z');
+const ICON_REDO = svgIcon('M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z');
+
+/** The cell's contents as they'd be typed into it. */
+function editText(cell: Cell | undefined, formula: string | undefined, formatted: string): string {
+  if (formula !== undefined) return `=${formula}`;
+  if (!cell || cell.t === 'z') return '';
+  if (cell.t === 'n') return formatted && /[/:-]|[A-Za-z]{3}/.test(formatted) ? formatted : numberText(cell.v as number);
+  if (cell.t === 'b') return cell.v ? 'TRUE' : 'FALSE';
+  return String(cell.v ?? '');
 }
 
 function escape(s: string): string {

@@ -10,7 +10,7 @@ export interface Rel {
 }
 
 export class Package {
-  private constructor(private zip: JSZip) {}
+  private constructor(readonly zip: JSZip) {}
 
   static async open(data: ArrayBuffer): Promise<Package> {
     return new Package(await JSZip.loadAsync(data));
