@@ -135,6 +135,14 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 `preBuild` runs `npm run build` in `web/` (needs `npm ci` there once, and `npm` on PATH).
 
+Release build (`./gradlew :app:assembleRelease` → `app/build/outputs/apk/release/`,
+`:app:bundleRelease` → `.aab` for Google Play): code shrinking is on, so test a release build
+on the phone before publishing (`adb install -r …/app-release.apk`; uninstall first if the phone
+has a build signed with a different key). Signing reads `keystore.properties` in the project root
+(copy `keystore.properties.example`; git-ignored, as are `*.jks`). Without it the release build
+falls back to the debug key, which must never be published. Check which key signed an APK with
+`apksigner verify --print-certs` (in the SDK's `build-tools/`).
+
 Web-only iteration in a desktop browser, with a file picker instead of the bridge
 (`.claude/launch.json` has the same server as `web-viewers`). In dev, `?file=` opens a file
 directly, e.g. `http://localhost:5173/?file=/@fs/<repo>/test-files/sample.docx` (add `&edit` to open
