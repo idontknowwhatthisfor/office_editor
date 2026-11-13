@@ -16,7 +16,7 @@ const GUTTER = 8;
  *
  * docx-preview turns the document's XML into styled HTML; paginate.ts then breaks it into pages.
  */
-export async function openDocx(root: HTMLElement, data: ArrayBuffer): Promise<void> {
+export async function openDocx(root: HTMLElement, data: ArrayBuffer, fileName = 'document.docx'): Promise<void> {
   const view = document.createElement('div');
   view.className = 'docx-view';
   try {
@@ -38,7 +38,20 @@ export async function openDocx(root: HTMLElement, data: ArrayBuffer): Promise<vo
 
   const lineHeights = scaleLineHeights(view);
 
-  root.replaceChildren(view);
+  const edit = document.createElement('button');
+  edit.className = 'docx-edit-button';
+  edit.textContent = t('edit');
+  edit.onclick = async () => {
+    edit.disabled = true;
+    const { startDocxEditing } = await import('./editor');
+    try {
+      if (!(await startDocxEditing(root, data, fileName))) edit.disabled = false;
+    } catch (e) {
+      console.error('could not start editing', e);
+      edit.disabled = false;
+    }
+  };
+  root.replaceChildren(view, edit);
   const wrapper = view.querySelector<HTMLElement>('.docx-wrapper');
   if (!wrapper) return;
 

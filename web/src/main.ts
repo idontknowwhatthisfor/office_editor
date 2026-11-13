@@ -29,7 +29,7 @@ async function open(info: DocInfo, load: () => Promise<ArrayBuffer>): Promise<vo
     await openPdf(app, { data }, { name: info.name, size: data.byteLength });
   } else if (info.format === 'docx') {
     const { openDocx } = await import('./docx/viewer');
-    await openDocx(app, data);
+    await openDocx(app, data, info.name);
   } else if (info.format === 'xlsx') {
     const { openXlsx } = await import('./xlsx/viewer');
     await openXlsx(app, data);

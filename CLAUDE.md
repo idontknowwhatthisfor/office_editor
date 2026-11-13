@@ -38,6 +38,13 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     SheetJS CE was not used (its npm build is stale and reads no styles), nor ExcelJS (large,
     needs Node polyfills). Column widths use Excel's digit width of the default font
     (`DIGIT_RATIO`), checked against Mac Excel.
+  - `src/docx/editor.ts` — Word editing (M7), in place on the file's own XML. The edit view is
+    docx-preview's rendering, reflowed to the screen at real size; a copy of document.xml gets
+    a bookmark before every paragraph and run so the screen maps back to XML elements. Only
+    paragraphs the user changed are rewritten (from their original pPr/rPr); others stay byte
+    for byte. Paragraphs holding anything but plain text runs are locked. Bold/italic/underline
+    are read back from computed styles; alignment, heading style and bullets/numbering are
+    paragraph properties (missing heading styles and list definitions are added).
   - `src/pptx/` — read-only presentation viewer, drawn by our own code (pptx-preview, the PRD's
     candidate, ships only minified code with no source or licence file). `deck.ts` loads
     slide → layout → master → theme; `render.ts` draws a slide as HTML (shapes as SVG outlines
@@ -52,6 +59,7 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
   with the viewer's formatting. `make_pptx_sample.py` (python-pptx) + `pptx_resave.applescript`
   and `make_pptx_native.applescript` make decks that PowerPoint has saved, plus PowerPoint's PDF
   of each as the reference rendering. PowerPoint asks once for access to `test-files/`.
+  `word_to_pdf.sh` opens a .docx in Word and saves Word's PDF of it (checks edited files).
 
 **How edits are saved:** the shell owns the Save button and dialog (`ViewerActivity`); an editor
 reports unsaved changes with `OfficeBridge.setDirty`. On Save the shell calls

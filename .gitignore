@@ -27,3 +27,4 @@ test-files/*
 !test-files/pptx_resave.applescript
 !test-files/make_pptx_native.applescript
 !test-files/make_pdf_form.mjs
+!test-files/word_to_pdf.sh

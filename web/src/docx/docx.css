@@ -45,3 +45,211 @@
   flex: 1 1 0;
   min-height: 0;
 }
+
+/* ------------------------------------------------------------ editing (editor.ts) */
+
+.docx-edit-button {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 10;
+  min-width: 88px;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 24px;
+  background: var(--accent);
+  color: var(--surface);
+  font: inherit;
+  font-weight: 500;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.3);
+}
+
+/* The edit view: the document reflowed to the screen at real size, like Word's mobile view. */
+.docx-view.docx-edit {
+  margin: 0;
+  padding-bottom: 72px;
+  overflow: visible;
+}
+
+.docx-edit .docx-wrapper > section.docx {
+  width: auto !important;
+  min-height: 0 !important;
+  margin: 0 0 8px;
+  padding: 16px !important;
+  box-shadow: none;
+}
+
+.docx-edit .docx-wrapper > section.docx > article {
+  flex: none;
+}
+
+.docx-edit img,
+.docx-edit table {
+  max-width: 100%;
+}
+
+.docx-edit table {
+  display: block;
+  overflow-x: auto;
+}
+
+.docx-edit p[contenteditable='true'] {
+  outline: none;
+  border-radius: 2px;
+}
+
+.docx-edit p[contenteditable='true']:focus {
+  background: rgb(47 91 215 / 0.06);
+}
+
+/* Paragraphs with content the editor can't change. */
+.docx-edit .oe-locked {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.docx-edit p[data-heading='h1'] span { font-size: 16pt !important; font-weight: 700 !important; }
+.docx-edit p[data-heading='h2'] span { font-size: 13pt !important; font-weight: 700 !important; }
+.docx-edit p[data-heading='h3'] span { font-size: 12pt !important; font-weight: 700 !important; }
+
+.docx-edit p.oe-bullet,
+.docx-edit p.oe-number {
+  position: relative;
+  padding-left: 24px;
+}
+
+.docx-edit p.oe-bullet::before {
+  content: '•';
+  position: absolute;
+  left: 8px;
+}
+
+.docx-edit p.oe-number {
+  counter-increment: oe-number;
+}
+
+.docx-edit p.oe-number::before {
+  content: counter(oe-number) '.';
+  position: absolute;
+  left: 0;
+}
+
+.docx-edit-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.docx-tool {
+  flex: 1 1 0;
+  min-width: 36px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 24px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 18px;
+}
+
+.docx-tool:active {
+  background: var(--border);
+}
+
+.docx-tool-h {
+  font-weight: 700;
+}
+
+.docx-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 72px);
+  z-index: 30;
+  max-width: calc(100vw - 32px);
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgb(32 33 36 / 0.92);
+  color: #fff;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.docx-toast.show {
+  opacity: 1;
+}
+
+.docx-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.docx-dialog {
+  width: min(100%, 380px);
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.docx-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.docx-dialog p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.docx-dialog-menu {
+  display: flex;
+  flex-direction: column;
+}
+
+.docx-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.docx-text-button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 22px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.docx-text-button.primary {
+  background: var(--accent);
+  color: var(--surface);
+}
