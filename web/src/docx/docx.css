@@ -66,32 +66,21 @@
 }
 
 /* The edit view: the document reflowed to the screen at real size, like Word's mobile view. */
+.docx-edit-frame {
+  /* Sized by editor.ts to the scaled paper; room at the bottom for the toolbar. */
+  margin: 8px auto 72px;
+  overflow: hidden;
+}
+
 .docx-view.docx-edit {
   margin: 0;
-  padding-bottom: 72px;
   overflow: visible;
+  transform-origin: 0 0;
 }
 
-.docx-edit .docx-wrapper > section.docx {
-  width: auto !important;
-  min-height: 0 !important;
-  margin: 0 0 8px;
-  padding: 16px !important;
-  box-shadow: none;
-}
-
+/* Pages aren't split while editing: each section is one sheet that grows with its text. */
 .docx-edit .docx-wrapper > section.docx > article {
   flex: none;
-}
-
-.docx-edit img,
-.docx-edit table {
-  max-width: 100%;
-}
-
-.docx-edit table {
-  display: block;
-  overflow-x: auto;
 }
 
 .docx-edit p[contenteditable='true'] {

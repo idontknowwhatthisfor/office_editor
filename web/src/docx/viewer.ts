@@ -7,7 +7,7 @@ import { showMessage } from '../message';
 import { paginate } from './paginate';
 
 /** Space around the pages, in CSS px. */
-const GUTTER = 8;
+export const GUTTER = 8;
 
 /**
  * Read-only Word viewer in page layout: pages have the document's paper size, margins, fonts and
@@ -56,9 +56,7 @@ export async function openDocx(root: HTMLElement, data: ArrayBuffer, fileName = 
   if (!wrapper) return;
 
   // Page breaks depend on line breaks, which depend on the fonts: wait for the ones in use.
-  void view.offsetHeight;
-  do await document.fonts.ready;
-  while (document.fonts.status === 'loading');
+  await fontsLoaded(view);
   lineHeights.measure();
   paginate(wrapper);
   numberPages(wrapper);
@@ -87,6 +85,13 @@ export async function openDocx(root: HTMLElement, data: ArrayBuffer, fileName = 
   });
 }
 
+/** Waits for the fonts the rendered document `view` uses (it must be in the page). */
+export async function fontsLoaded(view: HTMLElement): Promise<void> {
+  void view.offsetHeight;
+  do await document.fonts.ready;
+  while (document.fonts.status === 'loading');
+}
+
 /**
  * Word's "multiple" line spacing (1.0, 1.15, 1.5…) multiplies the font's own line height, which
  * is about 1.15 × the font size for Times New Roman or Arial. docx-preview writes it as a CSS
@@ -94,7 +99,7 @@ export async function openDocx(root: HTMLElement, data: ArrayBuffer, fileName = 
  * fit on a page. This rewrites every such line-height to be multiplied by --docx-line, and
  * `measure()` (call once fonts are loaded) sets --docx-line per paragraph from its font.
  */
-function scaleLineHeights(view: HTMLElement): { measure(): void } {
+export function scaleLineHeights(view: HTMLElement): { measure(): void } {
   // Only unitless values are multiples; "line-height: 14pt" is Word's exact spacing.
   const rewrite = (css: string) =>
     css.replace(/line-height:\s*([\d.]+)\s*(?=;|}|$)/g, 'line-height: calc($1 * var(--docx-line, 1.15))');

@@ -2,11 +2,13 @@ import { parseAsync, renderDocument } from 'docx-preview';
 import JSZip from 'jszip';
 import { t } from '../i18n';
 import { registerEditor, setDirty, type SaveResult } from '../save';
+import { fontsLoaded, GUTTER, scaleLineHeights } from './viewer';
 
 // Word editing (PRD M7), done in place on the file's own XML.
 //
-// The document is shown for editing as docx-preview renders it, reflowed to the screen at real
-// text size. Before rendering, a copy of document.xml gets a bookmark at the start of every
+// The document is shown for editing as docx-preview renders it, on paper of the document's own
+// size, scaled as a whole to the screen width so it looks as it does in the viewer (the pages
+// aren't split, though: each section is one long sheet). Before rendering, a copy of document.xml gets a bookmark at the start of every
 // paragraph and before every run; docx-preview turns bookmarks into <span id>, so each paragraph
 // and run on screen can be traced back to its XML element. On save only the paragraphs the user
 // changed are rewritten, from the original elements: their properties, and the properties of
@@ -71,6 +73,8 @@ class DocxEditor {
   private paras: Element[];
   private editable: boolean[];
   private view = el('div', 'docx-view docx-edit');
+  /** Holds the view, which is scaled with a transform, and takes its scaled size. */
+  private frame = el('div', 'docx-edit-frame');
   private bar = el('div', 'docx-edit-bar');
   /** Each paragraph's markup when editing began, by paragraph number. */
   private original = new Map<string, string>();
@@ -104,6 +108,7 @@ class DocxEditor {
       renderHeaders: false, renderFooters: false, renderFootnotes: false, renderEndnotes: false, useBase64URL: true,
     };
     this.view.append(...(await renderDocument(await parseAsync(bytes, options), options)));
+    const lineHeights = scaleLineHeights(this.view);
     for (const link of this.view.querySelectorAll('a[href]')) link.removeAttribute('href');
 
     for (const marker of this.view.querySelectorAll<HTMLElement>('span[id^="oep"]')) {
@@ -131,14 +136,48 @@ class DocxEditor {
       }
       marker.remove();
     }
-    for (const p of this.view.querySelectorAll<HTMLElement>('p[data-p]')) this.original.set(p.dataset.p!, p.outerHTML);
 
     this.buildBar();
-    this.root.replaceChildren(this.view, this.bar);
+    this.frame.append(this.view);
+    this.root.replaceChildren(this.frame, this.bar);
+    await fontsLoaded(this.view);
+    lineHeights.measure();
+    for (const p of this.view.querySelectorAll<HTMLElement>('p[data-p]')) this.original.set(p.dataset.p!, p.outerHTML);
+    this.fitToScreen();
     this.listen();
     this.history = [this.view.innerHTML];
     registerEditor({ fileName: this.fileName, produce: () => this.produce(), saved: (r) => this.saved(r) });
     toast(t('docxEditHint'));
+  }
+
+  /**
+   * Scales the paper to the screen width, as the viewer does. A transform only scales the painted
+   * result, so text wraps exactly as on the page; the frame is kept at the scaled size.
+   */
+  private fitToScreen(): void {
+    const sections = [...this.view.querySelectorAll<HTMLElement>('.docx-wrapper > section')];
+    const pageWidth = Math.max(1, ...sections.map((s) => s.offsetWidth));
+    this.view.style.width = `${pageWidth}px`;
+    let scale = 1;
+    const size = () => {
+      this.frame.style.width = `${pageWidth * scale}px`;
+      this.frame.style.height = `${this.view.offsetHeight * scale}px`;
+    };
+    const fit = () => {
+      scale = Math.min(1, (document.documentElement.clientWidth - 2 * GUTTER) / pageWidth);
+      this.view.style.transform = `scale(${scale})`;
+      size();
+    };
+    fit();
+    // Typing changes the height.
+    new ResizeObserver(size).observe(this.view);
+    let width = document.documentElement.clientWidth;
+    window.addEventListener('resize', () => {
+      if (document.documentElement.clientWidth !== width) {
+        width = document.documentElement.clientWidth;
+        fit();
+      }
+    });
   }
 
   // ---------------------------------------------------------------- toolbar

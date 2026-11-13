@@ -39,7 +39,8 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     needs Node polyfills). Column widths use Excel's digit width of the default font
     (`DIGIT_RATIO`), checked against Mac Excel.
   - `src/docx/editor.ts` — Word editing (M7), in place on the file's own XML. The edit view is
-    docx-preview's rendering, reflowed to the screen at real size; a copy of document.xml gets
+    docx-preview's rendering on real-size paper, scaled to the screen like the viewer (pages not
+    split); a copy of document.xml gets
     a bookmark before every paragraph and run so the screen maps back to XML elements. Only
     paragraphs the user changed are rewritten (from their original pPr/rPr); others stay byte
     for byte. Paragraphs holding anything but plain text runs are locked. Bold/italic/underline
