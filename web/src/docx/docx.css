@@ -1,8 +1,8 @@
 /* Overrides for docx-preview's generated markup: .docx-wrapper > section.docx (one per page). */
 
 .docx-view {
-  /* Sized by viewer.ts to the scaled pages; the margin is the gap to the screen edge. */
-  margin: 8px auto;
+  /* Sized by viewer.ts to the scaled pages; the bottom margin clears the bar. */
+  margin: 8px auto 72px;
   overflow: hidden;
   /* Mobile browsers enlarge text in wide blocks; pages must keep their exact layout. */
   text-size-adjust: 100%;
@@ -23,6 +23,27 @@
 
 .docx-view .docx-wrapper > section.docx:last-child {
   margin-bottom: 0;
+}
+
+/* Search matches (search.ts), in the PDF viewer's colours. */
+::highlight(docx-match) {
+  background-color: rgb(255 200 0 / 0.4);
+}
+
+::highlight(docx-match-selected) {
+  background-color: rgb(255 110 0 / 0.55);
+}
+
+/* A page thumbnail in the bottom bar: a copy of the page, scaled down by viewer.ts. */
+.docx-view.docx-thumb {
+  margin: 0;
+  overflow: visible;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.docx-view.docx-thumb section.docx {
+  box-shadow: none;
 }
 
 /* Second half of a paragraph split across pages (paginate.ts): not a new list item. */
@@ -48,24 +69,7 @@
 
 /* ------------------------------------------------------------ editing (editor.ts) */
 
-.docx-edit-button {
-  position: fixed;
-  right: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom));
-  z-index: 10;
-  min-width: 88px;
-  min-height: 48px;
-  padding: 0 20px;
-  border: 0;
-  border-radius: 24px;
-  background: var(--accent);
-  color: var(--surface);
-  font: inherit;
-  font-weight: 500;
-  box-shadow: 0 2px 6px rgb(0 0 0 / 0.3);
-}
-
-/* The edit view: the document reflowed to the screen at real size, like Word's mobile view. */
+/* The edit view: real-size paper scaled to the screen, as in the viewer (editor.ts). */
 .docx-edit-frame {
   /* Sized by editor.ts to the scaled paper; room at the bottom for the toolbar. */
   margin: 8px auto 72px;

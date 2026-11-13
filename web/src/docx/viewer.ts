@@ -4,7 +4,9 @@ import { parseAsync, renderDocument } from 'docx-preview';
 import JSZip from 'jszip';
 import { t } from '../i18n';
 import { showMessage } from '../message';
+import { PageBar, THUMB_WIDTH } from '../pagebar';
 import { paginate } from './paginate';
+import { DocxSearch } from './search';
 
 /** Space around the pages, in CSS px. */
 export const GUTTER = 8;
@@ -12,7 +14,8 @@ export const GUTTER = 8;
 /**
  * Read-only Word viewer in page layout: pages have the document's paper size, margins, fonts and
  * sizes, as in Word, and the whole page is scaled to the screen width. Pinch-zoom (the WebView's
- * own) then magnifies the page as a whole; nothing reflows.
+ * own) then magnifies the page as a whole; nothing reflows. The bottom bar (page indicator,
+ * thumbnails, search, edit) is the PDF viewer's.
  *
  * docx-preview turns the document's XML into styled HTML; paginate.ts then breaks it into pages.
  */
@@ -38,20 +41,19 @@ export async function openDocx(root: HTMLElement, data: ArrayBuffer, fileName = 
 
   const lineHeights = scaleLineHeights(view);
 
-  const edit = document.createElement('button');
-  edit.className = 'docx-edit-button';
-  edit.textContent = t('edit');
-  edit.onclick = async () => {
-    edit.disabled = true;
+  let editing = false;
+  const edit = async () => {
+    if (editing) return;
+    editing = true;
     const { startDocxEditing } = await import('./editor');
     try {
-      if (!(await startDocxEditing(root, data, fileName))) edit.disabled = false;
+      if (!(await startDocxEditing(root, data, fileName))) editing = false;
     } catch (e) {
       console.error('could not start editing', e);
-      edit.disabled = false;
+      editing = false;
     }
   };
-  root.replaceChildren(view, edit);
+  root.replaceChildren(view);
   const wrapper = view.querySelector<HTMLElement>('.docx-wrapper');
   if (!wrapper) return;
 
@@ -76,6 +78,7 @@ export async function openDocx(root: HTMLElement, data: ArrayBuffer, fileName = 
     view.style.height = `${pagesHeight * scale}px`;
   };
   fit();
+  addPageBar(root, view, [...wrapper.children] as HTMLElement[], pageWidth, edit);
   let width = document.documentElement.clientWidth;
   window.addEventListener('resize', () => {
     if (document.documentElement.clientWidth !== width) {
@@ -90,6 +93,65 @@ export async function fontsLoaded(view: HTMLElement): Promise<void> {
   void view.offsetHeight;
   do await document.fonts.ready;
   while (document.fonts.status === 'loading');
+}
+
+/** The PDF viewer's bottom bar, over the Word pages. */
+function addPageBar(root: HTMLElement, view: HTMLElement, pages: HTMLElement[], pageWidth: number, edit: () => void): void {
+  const goToPage = (index: number) => {
+    const top = pages[index].getBoundingClientRect().top;
+    window.scrollBy(0, top - (window.visualViewport?.offsetTop ?? 0) - GUTTER);
+  };
+  let current = 0;
+  const search = new DocxSearch(pages, () => current, (state) => bar.showSearchState(state));
+  const bar = new PageBar({
+    pageCount: pages.length,
+    aspect: (i) => pages[i].offsetWidth / pages[i].offsetHeight,
+    renderThumb: async (i, frame) => {
+      // A copy of the page, shrunk. It sits in a docx-view so the document's styles apply.
+      const copy = pages[i].cloneNode(true) as HTMLElement;
+      for (const node of copy.querySelectorAll('[id]')) node.removeAttribute('id');
+      const holder = document.createElement('div');
+      holder.className = 'docx-view docx-thumb';
+      holder.style.width = `${pageWidth}px`;
+      holder.style.transform = `scale(${THUMB_WIDTH / pageWidth})`;
+      const inner = document.createElement('div');
+      inner.className = 'docx-wrapper';
+      inner.append(copy);
+      holder.append(inner);
+      frame.append(holder);
+    },
+    goToPage,
+    find: (query) => search.find(query),
+    step: (direction) => search.step(direction),
+    clearSearch: () => search.clear(),
+    edit,
+  });
+  root.append(bar.el);
+
+  // The page whose area covers the middle of what's on screen.
+  const update = () => {
+    const viewport = window.visualViewport;
+    const middle = viewport ? viewport.offsetTop + viewport.height / 2 : window.innerHeight / 2;
+    let lo = 0;
+    let hi = pages.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (pages[mid].getBoundingClientRect().bottom < middle) lo = mid + 1;
+      else hi = mid;
+    }
+    current = lo;
+    bar.setCurrent(lo);
+  };
+  let frame = 0;
+  const schedule = () => {
+    if (!frame) frame = requestAnimationFrame(() => {
+      frame = 0;
+      if (view.isConnected) update();
+    });
+  };
+  window.addEventListener('scroll', schedule, { passive: true });
+  window.visualViewport?.addEventListener('scroll', schedule);
+  update();
 }
 
 /**

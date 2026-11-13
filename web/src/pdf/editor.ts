@@ -37,7 +37,7 @@ const MAX_EDIT_BYTES = 150 * 1024 * 1024;
 const SIGNATURE_WIDTH = 150;
 
 export class PdfEditor {
-  readonly row = el('div', 'pdf-bar-row pdf-edit-row');
+  readonly row = el('div', 'pagebar-row pdf-edit-row');
   private pages = new Map<number, PageState>();
   private ops: Op[] = [];
   private undone: Op[] = [];
@@ -707,7 +707,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string): H
 }
 
 function iconButton(path: string, label: string): HTMLButtonElement {
-  const button = el('button', 'pdf-icon-button');
+  const button = el('button', 'pagebar-icon');
   button.setAttribute('aria-label', label);
   button.title = label;
   button.innerHTML = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="${path}"/></svg>`;

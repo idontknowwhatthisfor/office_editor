@@ -1,0 +1,128 @@
+/* Bottom bar of the paged viewers (pagebar.ts). */
+
+.pagebar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  /* Pinned to the visible area while zoomed; see pinToViewport in pagebar.ts. */
+  transform-origin: 0 100%;
+}
+
+.pagebar-row {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.pagebar-row[hidden] {
+  display: none;
+}
+
+.pagebar button {
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  border-radius: 24px;
+}
+
+.pagebar button:active {
+  background: var(--border);
+}
+
+.pagebar-icon {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.pagebar-indicator {
+  min-width: 96px;
+  height: 48px;
+  padding: 0 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pagebar-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  margin-left: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.pagebar-search-input:focus {
+  border-color: var(--accent);
+}
+
+.pagebar-search-count {
+  flex: none;
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- page thumbnails ---- */
+
+.pagebar-thumbs {
+  display: none;
+  gap: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.pagebar-thumbs.open {
+  display: flex;
+  align-items: flex-end;
+}
+
+.pagebar .pagebar-thumb {
+  flex: none;
+  width: 80px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+}
+
+.pagebar-thumb.current {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text);
+}
+
+.pagebar-thumb-frame {
+  width: 72px;
+  overflow: hidden;
+  margin-bottom: 4px;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.pagebar-thumb-frame canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+

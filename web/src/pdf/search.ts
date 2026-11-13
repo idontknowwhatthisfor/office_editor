@@ -1,4 +1,5 @@
 import type { PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import type { SearchState } from '../pagebar';
 
 export type TextContent = Awaited<ReturnType<PDFPageProxy['getTextContent']>>;
 
@@ -13,13 +14,6 @@ export interface SearchHost {
   reveal(page: number): Promise<void>;
 }
 
-export interface SearchState {
-  query: string;
-  /** Index of the selected match, -1 if none. */
-  current: number;
-  total: number;
-  searching: boolean;
-}
 
 interface Match {
   page: number;

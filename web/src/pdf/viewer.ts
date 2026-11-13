@@ -3,8 +3,9 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { t } from '../i18n';
 import { showMessage } from '../message';
+import { PageBar, THUMB_WIDTH } from '../pagebar';
 import { PdfEditor } from './editor';
-import { PdfSearch, type SearchState, type TextContent } from './search';
+import { PdfSearch, type TextContent } from './search';
 
 // Runtime files copied to public/pdfjs by scripts/copy-pdf-assets.mjs.
 const assets = new URL('pdfjs/', document.baseURI).href;
@@ -14,7 +15,6 @@ pdfjs.GlobalWorkerOptions.workerSrc = `${assets}pdf.worker.min.js`;
 const MAX_CANVAS_PIXELS = 6_000_000;
 const PAGE_MARGIN = 8;
 const MAX_PAGE_WIDTH = 1100;
-const THUMB_WIDTH = 72;
 
 interface PageView {
   index: number;
@@ -94,12 +94,7 @@ class PdfViewer {
   private pumping = false;
   private search: PdfSearch;
 
-  private indicator = el('button', 'pdf-indicator');
-  private thumbsEl = el('div', 'pdf-thumbs');
-  private thumbs: HTMLButtonElement[] = [];
-  private thumbQueue: Promise<void> = Promise.resolve();
-  private searchInput = el('input', 'pdf-search-input');
-  private searchCount = el('span', 'pdf-search-count');
+  private bar: PageBar;
 
   private editor: PdfEditor;
 
@@ -129,7 +124,7 @@ class PdfViewer {
         textDivs: (page) => this.pages[page].textDivs ?? null,
         reveal: (page) => this.reveal(page),
       },
-      (state) => this.showSearchState(state),
+      (state) => this.bar.showSearchState(state),
     );
 
     this.editor = new PdfEditor(
@@ -141,10 +136,24 @@ class PdfViewer {
         reload: () => location.reload(),
       },
       hasForms,
-      () => this.showMainRow(),
+      () => this.bar.showRow(this.bar.main),
     );
-    const bar = this.buildBar();
-    root.replaceChildren(this.pagesEl, bar);
+    this.bar = new PageBar(
+      {
+        pageCount: pdf.numPages,
+        aspect: (i) => this.pages[i].width / this.pages[i].height,
+        renderThumb: (i, frame) => this.renderThumb(i, frame),
+        goToPage: (i) => this.goToPage(i),
+        find: (query) => void this.search.find(query),
+        step: (direction) => this.search.step(direction),
+        clearSearch: () => this.search.clear(),
+        edit: () => {
+          if (this.editor.start()) this.bar.showRow(this.editor.row);
+        },
+      },
+      [this.editor.row],
+    );
+    root.replaceChildren(this.pagesEl, this.bar.el);
     this.layout();
 
     const observer = new IntersectionObserver(
@@ -181,18 +190,9 @@ class PdfViewer {
 
     const viewport = window.visualViewport;
     if (viewport) {
-      // A fixed element belongs to the layout viewport, so when the page is pinch-zoomed the bar
-      // would be magnified and pushed off screen. Counter-transform it to stay put on the glass.
-      const pinBar = () => {
-        const below = document.documentElement.clientHeight - viewport.offsetTop - viewport.height;
-        bar.style.transform =
-          `translate(${viewport.offsetLeft}px, ${-below}px) scale(${1 / viewport.scale})`;
-      };
-      viewport.addEventListener('scroll', pinBar);
       // A pinch-zoom fires a stream of these; re-render sharper once it stops.
       let zoomTimer = 0;
       viewport.addEventListener('resize', () => {
-        pinBar();
         clearTimeout(zoomTimer);
         zoomTimer = window.setTimeout(() => void this.pump(), 200);
       });
@@ -265,10 +265,8 @@ class PdfViewer {
       if (this.pages[mid].el.getBoundingClientRect().bottom < middle) lo = mid + 1;
       else hi = mid;
     }
-    this.thumbs[this.current]?.classList.remove('current');
     this.current = lo;
-    this.thumbs[lo]?.classList.add('current');
-    this.indicator.textContent = `${lo + 1} / ${this.pages.length}`;
+    this.bar.setCurrent(lo);
   }
 
   private goToPage(index: number): void {
@@ -401,138 +399,17 @@ class PdfViewer {
     void this.pump();
   }
 
-  // ---- bottom bar, thumbnails, search ----
+  // ---- thumbnails ----
 
-  private buildBar(): HTMLElement {
-    const bar = el('div', 'pdf-bar');
-
-    const main = el('div', 'pdf-bar-row');
-    const pagesButton = iconButton(ICON_PAGES, t('pages'));
-    const searchButton = iconButton(ICON_SEARCH, t('search'));
-    const editButton = iconButton(ICON_EDIT, t('edit'));
-    editButton.onclick = () => {
-      if (!this.editor.start()) return;
-      this.thumbsEl.classList.remove('open');
-      main.hidden = true;
-      this.editor.row.hidden = false;
-    };
-    this.showMainRow = () => {
-      this.editor.row.hidden = true;
-      main.hidden = false;
-    };
-    const toggleThumbs = () => this.toggleThumbs();
-    pagesButton.onclick = toggleThumbs;
-    this.indicator.onclick = toggleThumbs;
-    this.indicator.setAttribute('aria-label', t('pages'));
-    main.append(pagesButton, this.indicator, searchButton, editButton);
-
-    const searchRow = el('div', 'pdf-bar-row');
-    searchRow.hidden = true;
-    this.searchInput.type = 'search';
-    this.searchInput.placeholder = t('searchHint');
-    this.searchInput.enterKeyHint = 'search';
-    this.searchInput.autocapitalize = 'off';
-    this.searchInput.setAttribute('aria-label', t('searchHint'));
-    const previous = iconButton(ICON_UP, t('previous'));
-    const next = iconButton(ICON_DOWN, t('next'));
-    const close = iconButton(ICON_CLOSE, t('close'));
-    searchRow.append(this.searchInput, this.searchCount, previous, next, close);
-
-    let timer = 0;
-    this.searchInput.oninput = () => {
-      clearTimeout(timer);
-      timer = window.setTimeout(() => void this.search.find(this.searchInput.value), 250);
-    };
-    this.searchInput.onkeydown = (e) => {
-      if (e.key !== 'Enter') return;
-      this.searchInput.blur(); // hide the keyboard so the result is visible
-      this.search.step(1);
-    };
-    previous.onclick = () => this.search.step(-1);
-    next.onclick = () => this.search.step(1);
-    searchButton.onclick = () => {
-      this.thumbsEl.classList.remove('open');
-      main.hidden = true;
-      searchRow.hidden = false;
-      this.searchInput.focus();
-    };
-    close.onclick = () => {
-      clearTimeout(timer);
-      this.searchInput.value = '';
-      this.search.clear();
-      searchRow.hidden = true;
-      main.hidden = false;
-    };
-
-    bar.append(this.thumbsEl, main, searchRow, this.editor.row);
-    return bar;
-  }
-
-  private showMainRow: () => void = () => undefined;
-
-  private showSearchState(state: SearchState): void {
-    this.searchCount.textContent =
-      state.total > 0 ? `${state.current + 1}/${state.total}`
-      : state.query === '' ? ''
-      : state.searching ? '…'
-      : t('noResults');
-  }
-
-  private toggleThumbs(): void {
-    if (this.thumbsEl.classList.toggle('open')) {
-      if (this.thumbs.length === 0) this.buildThumbs();
-      this.thumbs[this.current].scrollIntoView({ inline: 'center', block: 'nearest' });
-    }
-  }
-
-  private buildThumbs(): void {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          observer.unobserve(entry.target);
-          const index = this.thumbs.indexOf(entry.target as HTMLButtonElement);
-          this.thumbQueue = this.thumbQueue.then(() => this.renderThumb(index));
-        }
-      },
-      { root: this.thumbsEl, rootMargin: '0px 200px' },
-    );
-    this.pages.forEach((page) => {
-      const button = el('button', 'pdf-thumb');
-      button.setAttribute('aria-label', t('page', { n: page.index + 1 }));
-      const frame = el('div', 'pdf-thumb-frame');
-      frame.style.aspectRatio = `${page.width} / ${page.height}`;
-      const number = el('span', '');
-      number.textContent = String(page.index + 1);
-      button.append(frame, number);
-      button.onclick = () => {
-        this.goToPage(page.index);
-        this.thumbsEl.classList.remove('open');
-      };
-      this.thumbs.push(button);
-      observer.observe(button);
-    });
-    this.thumbsEl.append(...this.thumbs);
-    this.thumbs[this.current].classList.add('current');
-  }
-
-  private async renderThumb(index: number): Promise<void> {
-    try {
-      const page = this.pages[index];
-      const proxy = await this.proxy(page);
-      const viewport = proxy.getViewport({
-        scale: (THUMB_WIDTH * Math.min(devicePixelRatio, 2)) / page.width,
-      });
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(viewport.width);
-      canvas.height = Math.round(viewport.height);
-      await proxy.render({ canvas, viewport }).promise;
-      const frame = this.thumbs[index].firstElementChild as HTMLElement;
-      frame.style.aspectRatio = `${page.width} / ${page.height}`;
-      frame.append(canvas);
-    } catch (e) {
-      console.error(`thumbnail ${index + 1} failed`, e);
-    }
+  private async renderThumb(index: number, frame: HTMLElement): Promise<void> {
+    const page = this.pages[index];
+    const proxy = await this.proxy(page);
+    const viewport = proxy.getViewport({ scale: (THUMB_WIDTH * Math.min(devicePixelRatio, 2)) / page.width });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    await proxy.render({ canvas, viewport }).promise;
+    frame.append(canvas);
   }
 }
 
@@ -541,18 +418,3 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string): H
   if (className) node.className = className;
   return node;
 }
-
-function iconButton(path: string, label: string): HTMLButtonElement {
-  const button = el('button', 'pdf-icon-button');
-  button.setAttribute('aria-label', label);
-  button.innerHTML = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="${path}"/></svg>`;
-  return button;
-}
-
-// Material Symbols paths (Apache-2.0).
-const ICON_SEARCH = 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z';
-const ICON_PAGES = 'M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z';
-const ICON_UP = 'M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z';
-const ICON_DOWN = 'M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z';
-const ICON_EDIT = 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z';
-const ICON_CLOSE = 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z';
