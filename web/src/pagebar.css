@@ -18,7 +18,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  padding: 0 4px;
+  /* On a wide screen the buttons stay together in the middle, within thumb's reach of each
+     other, instead of spreading to the edges. */
+  padding: 0 max(4px, calc(50% - 300px));
 }
 
 .pagebar-row[hidden] {
@@ -126,3 +128,27 @@
   height: 100%;
 }
 
+
+/* A short screen (a phone held sideways): a lower bar leaves more of the page. */
+@media (max-height: 480px) {
+  .pagebar-row {
+    height: 44px;
+  }
+
+  .pagebar-icon,
+  .pagebar-indicator {
+    height: 40px;
+  }
+
+  .pagebar-thumbs {
+    padding: 6px 12px;
+  }
+
+  .pagebar .pagebar-thumb {
+    width: 64px;
+  }
+
+  .pagebar-thumb-frame {
+    width: 56px;
+  }
+}

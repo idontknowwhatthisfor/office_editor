@@ -17,13 +17,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -149,12 +156,32 @@ private fun HomeScreen(
     onRemove: (RecentFile) -> Unit,
 ) {
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.app_name)) },
+                expandedHeight = appBarHeight(),
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
+            )
+        },
+        // Keeps the list clear of a camera cutout at the side when the phone is held sideways.
+        contentWindowInsets = WindowInsets.safeDrawing,
         floatingActionButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                NewFileButton(onNewDocument, onNewSpreadsheet)
-                Spacer(Modifier.height(16.dp))
+            val open = @Composable {
                 ExtendedFloatingActionButton(onClick = onOpenPicker) { Text(stringResource(R.string.open_file)) }
+            }
+            // Stacked, or side by side on a short screen (a phone held sideways).
+            if (LocalConfiguration.current.screenHeightDp < 480) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    NewFileButton(onNewDocument, onNewSpreadsheet)
+                    Spacer(Modifier.width(16.dp))
+                    open()
+                }
+            } else {
+                Column(horizontalAlignment = Alignment.End) {
+                    NewFileButton(onNewDocument, onNewSpreadsheet)
+                    Spacer(Modifier.height(16.dp))
+                    open()
+                }
             }
         },
     ) { padding ->
@@ -174,21 +201,24 @@ private fun HomeScreen(
                 )
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                // Room for the floating buttons below the last row.
-                contentPadding = PaddingValues(bottom = 168.dp),
-            ) {
-                item {
-                    Text(
-                        stringResource(R.string.recent_files),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-                items(files, key = { it.uri.toString() }) { file ->
-                    RecentRow(file, onClick = { onOpen(file) }, onRemove = { onRemove(file) })
+            // On a wide screen the list keeps a readable width, in the middle.
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+                LazyColumn(
+                    modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth().fillMaxHeight(),
+                    // Room for the floating buttons below the last row.
+                    contentPadding = PaddingValues(bottom = if (LocalConfiguration.current.screenHeightDp < 480) 96.dp else 168.dp),
+                ) {
+                    item {
+                        Text(
+                            stringResource(R.string.recent_files),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                    items(files, key = { it.uri.toString() }) { file ->
+                        RecentRow(file, onClick = { onOpen(file) }, onRemove = { onRemove(file) })
+                    }
                 }
             }
         }

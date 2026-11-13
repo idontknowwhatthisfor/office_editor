@@ -17,12 +17,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.union
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
@@ -80,7 +87,7 @@ class ViewerActivity : ComponentActivity(), EditorHost {
 
     private enum class Dialog { NONE, SAVE, UNSAVED }
 
-    @OptIn(ExperimentalMaterial3Api::class)
+    @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -110,9 +117,13 @@ class ViewerActivity : ComponentActivity(), EditorHost {
 
         setContent {
             OfficeEditorTheme {
+                StatusBarOnTallScreens()
+                // Typing on a phone held sideways leaves room for little but the keyboard, so
+                // the top bar steps aside until the keyboard closes.
+                val typingSideways = LocalConfiguration.current.screenHeightDp < 480 && WindowInsets.isImeVisible
                 Scaffold(
                     topBar = {
-                        TopAppBar(
+                        if (!typingSideways) TopAppBar(
                             title = {
                                 Text(
                                     doc?.name ?: stringResource(R.string.app_name),
@@ -120,6 +131,8 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             },
+                            expandedHeight = appBarHeight(),
+                            windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
                             navigationIcon = {
                                 IconButton(onClick = { finish() }) {
                                     Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
@@ -158,7 +171,9 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                     },
                     // The web page lays out above the navigation bar and the keyboard.
                     // (Dialogs are drawn after the content, below.)
-                    contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime),
+                    // (safeDrawing: navigation bar, keyboard, and a camera cutout at the side when
+                    // the phone is held sideways.)
+                    contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
                 ) { padding ->
                     val view = webView
                     if (view != null) {
@@ -187,6 +202,20 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                 BackHandler(enabled = unsaved && !saving) { dialog = Dialog.UNSAVED }
                 SaveDialogs()
             }
+        }
+    }
+
+    /**
+     * A phone held sideways has little height to spare, so the document takes the status bar's
+     * place there; a swipe from the edge shows the bar for a moment.
+     */
+    @androidx.compose.runtime.Composable
+    private fun StatusBarOnTallScreens() {
+        val short = LocalConfiguration.current.screenHeightDp < 480
+        LaunchedEffect(short) {
+            val bars = WindowCompat.getInsetsController(window, window.decorView)
+            bars.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (short) bars.hide(WindowInsetsCompat.Type.statusBars()) else bars.show(WindowInsetsCompat.Type.statusBars())
         }
     }
 

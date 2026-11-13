@@ -154,7 +154,8 @@
   z-index: 10;
   display: flex;
   justify-content: space-between;
-  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  /* Kept together in the middle of a wide screen (as the viewers' bottom bar). */
+  padding: 4px max(4px, calc(50% - 300px)) calc(4px + env(safe-area-inset-bottom));
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
@@ -263,4 +264,16 @@
 .docx-text-button.primary {
   background: var(--accent);
   color: var(--surface);
+}
+
+/* A short screen (a phone held sideways, with the keyboard up): a lower toolbar. */
+@media (max-height: 480px) {
+  .docx-tool {
+    height: 40px;
+  }
+
+  .docx-edit-bar {
+    padding-top: 2px;
+    padding-bottom: calc(2px + env(safe-area-inset-bottom));
+  }
 }

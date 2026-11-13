@@ -90,6 +90,15 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
   `test-files/out/` for checking in Word/Excel/PowerPoint (open with `open -a`, which needs no
   sandbox prompt).
 
+**Wide and short screens:** bottom bars and editing toolbars keep their buttons within 600 px in
+the middle of a wide screen. A short screen (height < 480 dp, a phone held sideways) gets a 48 dp
+top bar (`appBarHeight()`), lower web bars (`@media (max-height: 480px)`), no status bar in the
+viewer, and no top bar at all while the keyboard is up; home's buttons sit side by side. Content
+stays clear of a side camera cutout (`WindowInsets.safeDrawing`). Test on the phone with
+`adb shell wm size 2340x1080` (sideways) or `wm size 1600x2560` + `wm density 320` (tablet), then
+`wm size reset` / `wm density reset`; a sideways simulation puts the cutout on the top edge, which
+a real phone held sideways doesn't.
+
 **How edits are saved:** the shell owns the Save button and dialog (`ViewerActivity`); an editor
 reports unsaved changes with `OfficeBridge.setDirty`. On Save the shell calls
 `window.officeSave(mode)`; the editor builds the file, re-reads it, and streams it back in base64
