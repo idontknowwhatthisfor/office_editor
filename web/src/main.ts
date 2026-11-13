@@ -29,7 +29,7 @@ async function open(info: DocInfo, load: () => Promise<ArrayBuffer>): Promise<vo
     await openPdf(app, { data }, { name: info.name, size: data.byteLength });
   } else if (info.format === 'docx') {
     const { openDocx } = await import('./docx/viewer');
-    await openDocx(app, data, info.name);
+    await openDocx(app, data, info.name, info.edit);
   } else if (info.format === 'xlsx') {
     const { openXlsx } = await import('./xlsx/viewer');
     await openXlsx(app, data);
@@ -46,14 +46,16 @@ async function fetchBytes(url: string): Promise<ArrayBuffer> {
 }
 
 const doc = nativeDocument();
-// Dev server only: `?file=/@fs/abs/path/to/test-files/sample.docx` opens a file without the picker.
+// Dev server only: `?file=/@fs/abs/path/to/test-files/sample.docx` opens a file without the picker
+// (add `&edit` to open it in edit mode, as a new document does).
 const devFile = import.meta.env.DEV ? new URLSearchParams(location.search).get('file') : null;
 if (doc) {
   void open(doc, () => fetchBytes(doc.url));
 } else if (devFile) {
   const name = devFile.split('/').pop()!;
   const format = name.split('.').pop()!.toLowerCase() as DocFormat;
-  void open({ name, format, mime: '', size: -1, url: devFile }, () => fetchBytes(devFile));
+  const edit = new URLSearchParams(location.search).has('edit');
+  void open({ name, format, mime: '', size: -1, url: devFile, edit }, () => fetchBytes(devFile));
 } else {
   // Desktop browser during development: pick a local file.
   const input = document.createElement('input');

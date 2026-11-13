@@ -3,7 +3,7 @@
     <string name="open_file">Buka file</string>
     <string name="recent_files">File terbaru</string>
     <string name="no_recent_title">Belum ada file terbaru</string>
-    <string name="no_recent_body">Buka file PDF, Word, Excel, atau PowerPoint untuk memulai. Semuanya tetap di perangkat ini.</string>
+    <string name="no_recent_body">Buka file PDF, Word, Excel, atau PowerPoint, atau ketuk + untuk membuat dokumen atau spreadsheet baru. Semuanya tetap di perangkat ini.</string>
     <string name="remove_from_recents">Hapus dari file terbaru</string>
     <string name="back">Kembali</string>
     <string name="share">Bagikan</string>
@@ -25,4 +25,10 @@
     <string name="saved">Tersimpan</string>
     <string name="saved_copy">Tersimpan sebagai salinan</string>
     <string name="save_failed">Gagal menyimpan. File asli tidak diubah.</string>
+    <string name="new_file">File baru</string>
+    <string name="new_document">Dokumen baru</string>
+    <string name="new_spreadsheet">Spreadsheet baru</string>
+    <string name="new_document_name">Dokumen</string>
+    <string name="new_spreadsheet_name">Spreadsheet</string>
+    <string name="create_failed">File tidak bisa dibuat</string>
 </resources>

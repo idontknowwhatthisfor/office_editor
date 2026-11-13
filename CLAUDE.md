@@ -9,7 +9,12 @@ milestone at a time.
 Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
 
 - `app/` — Kotlin + Jetpack Compose shell, package `com.officeeditor`.
-  - `MainActivity` — home: recent files, "Open file" (SAF picker).
+  - `MainActivity` — home: recent files, "Open file" (SAF picker), and "+" → New document / New
+    spreadsheet: the system save picker creates the file, it is filled from a blank template
+    (`res/raw/blank_document.docx`, `blank_spreadsheet.xlsx`, built by
+    `app/templates/make_blank_templates.py`: A4, Calibri 11, no author metadata), and opened with
+    `EXTRA_START_EDITING` (passed to the page as `edit` in `getDocument()`; a Word file then opens
+    in edit mode).
   - `ViewerActivity` — one document; also the target of "Open with" (`ACTION_VIEW`) and share-to
     (`ACTION_SEND`). Top bar is native; everything below it is the WebView.
   - `DocumentWebView.kt` — WebView setup and the JS bridge (`window.OfficeBridge`).
@@ -114,7 +119,8 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 Web-only iteration in a desktop browser, with a file picker instead of the bridge
 (`.claude/launch.json` has the same server as `web-viewers`). In dev, `?file=` opens a file
-directly, e.g. `http://localhost:5173/?file=/@fs/<repo>/test-files/sample.docx`:
+directly, e.g. `http://localhost:5173/?file=/@fs/<repo>/test-files/sample.docx` (add `&edit` to open
+in edit mode, as a new document does):
 
 ```bash
 cd web && npm run dev

@@ -31,7 +31,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +44,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,8 +56,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.concurrent.thread
 
-/** Home: recent files and "Open file". */
+/** Home: recent files, "Open file", and new blank documents and spreadsheets. */
 class MainActivity : ComponentActivity() {
     private lateinit var recents: RecentFiles
     private var files by mutableStateOf(emptyList<RecentFile>())
@@ -67,9 +72,18 @@ class MainActivity : ComponentActivity() {
                 val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                     if (uri != null) open(uri, null)
                 }
+                // "New": the user picks where the file goes, then it starts as a copy of a blank one.
+                val newDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(DocFormat.DOCX.mime)) {
+                    if (it != null) create(it, DocFormat.DOCX)
+                }
+                val newSpreadsheet = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(DocFormat.XLSX.mime)) {
+                    if (it != null) create(it, DocFormat.XLSX)
+                }
                 HomeScreen(
                     files = files,
                     onOpenPicker = { picker.launch(DocFormat.mimeTypes) },
+                    onNewDocument = { newDocument.launch(getString(R.string.new_document_name) + ".docx") },
+                    onNewSpreadsheet = { newSpreadsheet.launch(getString(R.string.new_spreadsheet_name) + ".xlsx") },
                     onOpen = { open(it.uri, it.format.mime) },
                     onRemove = {
                         recents.remove(it.uri)
@@ -85,8 +99,28 @@ class MainActivity : ComponentActivity() {
         files = recents.list()
     }
 
-    private fun open(uri: Uri, mime: String?) {
+    /** Fills the file just created at [uri] with a blank [format] file and opens it for editing. */
+    private fun create(uri: Uri, format: DocFormat) {
+        val blank = if (format == DocFormat.DOCX) R.raw.blank_document else R.raw.blank_spreadsheet
+        thread {
+            val ok = try {
+                contentResolver.openOutputStream(uri, "w")!!.use { out ->
+                    resources.openRawResource(blank).use { it.copyTo(out) }
+                }
+                true
+            } catch (e: Exception) {
+                false
+            }
+            runOnUiThread {
+                if (ok) open(uri, format.mime, startEditing = true)
+                else Toast.makeText(this, R.string.create_failed, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun open(uri: Uri, mime: String?, startEditing: Boolean = false) {
         val intent = Intent(this, ViewerActivity::class.java).setAction(Intent.ACTION_VIEW)
+            .putExtra(ViewerActivity.EXTRA_START_EDITING, startEditing)
         if (RecentFiles.isOwnCopy(this, uri)) {
             // file:// URIs may not travel as intent data; the viewer rebuilds it from the path.
             intent.putExtra(ViewerActivity.EXTRA_OWN_COPY, uri.path).setType(mime)
@@ -109,17 +143,19 @@ class MainActivity : ComponentActivity() {
 private fun HomeScreen(
     files: List<RecentFile>,
     onOpenPicker: () -> Unit,
+    onNewDocument: () -> Unit,
+    onNewSpreadsheet: () -> Unit,
     onOpen: (RecentFile) -> Unit,
     onRemove: (RecentFile) -> Unit,
 ) {
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onOpenPicker,
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text(stringResource(R.string.open_file)) },
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                NewFileButton(onNewDocument, onNewSpreadsheet)
+                Spacer(Modifier.height(16.dp))
+                ExtendedFloatingActionButton(onClick = onOpenPicker) { Text(stringResource(R.string.open_file)) }
+            }
         },
     ) { padding ->
         if (files.isEmpty()) {
@@ -140,8 +176,8 @@ private fun HomeScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
-                // Room for the floating button below the last row.
-                contentPadding = PaddingValues(bottom = 96.dp),
+                // Room for the floating buttons below the last row.
+                contentPadding = PaddingValues(bottom = 168.dp),
             ) {
                 item {
                     Text(
@@ -159,6 +195,49 @@ private fun HomeScreen(
     }
 }
 
+/** "+" with a menu: new document, new spreadsheet. */
+@Composable
+private fun NewFileButton(onNewDocument: () -> Unit, onNewSpreadsheet: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        FloatingActionButton(onClick = { open = true }) {
+            Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.new_file))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.new_document)) },
+                leadingIcon = { FormatBadge(DocFormat.DOCX, small = true) },
+                onClick = {
+                    open = false
+                    onNewDocument()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.new_spreadsheet)) },
+                leadingIcon = { FormatBadge(DocFormat.XLSX, small = true) },
+                onClick = {
+                    open = false
+                    onNewSpreadsheet()
+                },
+            )
+        }
+    }
+}
+
+/** The coloured file-type badge of the recent list. */
+@Composable
+private fun FormatBadge(format: DocFormat, small: Boolean = false) {
+    Box(
+        modifier = Modifier
+            .size(width = if (small) 30.dp else 40.dp, height = if (small) 36.dp else 48.dp)
+            .clip(RoundedCornerShape(if (small) 4.dp else 6.dp))
+            .background(format.badgeColor()),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(format.label, color = Color.White, fontSize = if (small) 10.sp else 12.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
 @Composable
 private fun RecentRow(file: RecentFile, onClick: () -> Unit, onRemove: () -> Unit) {
     Row(
@@ -168,15 +247,7 @@ private fun RecentRow(file: RecentFile, onClick: () -> Unit, onRemove: () -> Uni
             .padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(width = 40.dp, height = 48.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(file.format.badgeColor()),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(file.format.label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        }
+        FormatBadge(file.format)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(

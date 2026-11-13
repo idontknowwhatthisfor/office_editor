@@ -11,6 +11,8 @@ export interface DocInfo {
   size: number;
   /** Same-origin URL that streams the file's bytes. */
   url: string;
+  /** Open in edit mode (a new blank document). */
+  edit?: boolean;
 }
 
 declare global {

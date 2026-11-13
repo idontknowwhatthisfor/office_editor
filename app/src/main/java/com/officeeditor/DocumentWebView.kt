@@ -31,7 +31,7 @@ private const val DOC_PATH = "/doc/"
  * ranges). That avoids base64-encoding whole files across the JS bridge. Any other URL is refused.
  */
 @SuppressLint("SetJavaScriptEnabled")
-fun createDocumentWebView(context: Context, doc: DocumentInfo, host: EditorHost): WebView {
+fun createDocumentWebView(context: Context, doc: DocumentInfo, host: EditorHost, startEditing: Boolean = false): WebView {
     val format = requireNotNull(doc.format)
     val assetLoader = WebViewAssetLoader.Builder()
         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
@@ -79,7 +79,7 @@ fun createDocumentWebView(context: Context, doc: DocumentInfo, host: EditorHost)
                 return true
             }
         }
-        addJavascriptInterface(Bridge(doc, format, host), "OfficeBridge")
+        addJavascriptInterface(Bridge(doc, format, host, startEditing), "OfficeBridge")
         loadUrl(VIEWER_URL)
     }
 }
@@ -167,8 +167,16 @@ interface EditorHost {
 }
 
 /** What the web viewers can ask the native shell. Called on a WebView thread, not the UI thread. */
-private class Bridge(private val doc: DocumentInfo, private val format: DocFormat, private val host: EditorHost) {
-    /** The open document as JSON: `{name, format, mime, size, url}`; fetch `url` for the bytes. */
+private class Bridge(
+    private val doc: DocumentInfo,
+    private val format: DocFormat,
+    private val host: EditorHost,
+    private val startEditing: Boolean,
+) {
+    /**
+     * The open document as JSON: `{name, format, mime, size, url, edit}`; fetch `url` for the
+     * bytes. `edit`: open in edit mode.
+     */
     @JavascriptInterface
     fun getDocument(): String = JSONObject()
         .put("name", doc.name)
@@ -176,6 +184,7 @@ private class Bridge(private val doc: DocumentInfo, private val format: DocForma
         .put("mime", format.mime)
         .put("size", doc.size)
         .put("url", DOC_PATH + "current")
+        .put("edit", startEditing)
         .toString()
 
     @JavascriptInterface

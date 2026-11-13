@@ -102,9 +102,11 @@
   opacity: 0.75;
 }
 
-.docx-edit p[data-heading='h1'] span { font-size: 16pt !important; font-weight: 700 !important; }
-.docx-edit p[data-heading='h2'] span { font-size: 13pt !important; font-weight: 700 !important; }
-.docx-edit p[data-heading='h3'] span { font-size: 12pt !important; font-weight: 700 !important; }
+/* Heading preview. On the paragraph as well as its runs: text typed into an empty paragraph
+   (a new document) has no run of its own. */
+.docx-edit p[data-heading='h1'], .docx-edit p[data-heading='h1'] span { font-size: 16pt !important; font-weight: 700 !important; }
+.docx-edit p[data-heading='h2'], .docx-edit p[data-heading='h2'] span { font-size: 13pt !important; font-weight: 700 !important; }
+.docx-edit p[data-heading='h3'], .docx-edit p[data-heading='h3'] span { font-size: 12pt !important; font-weight: 700 !important; }
 
 .docx-edit p.oe-bullet,
 .docx-edit p.oe-number {

@@ -4,7 +4,7 @@
     <string name="open_file">Open file</string>
     <string name="recent_files">Recent files</string>
     <string name="no_recent_title">No recent files</string>
-    <string name="no_recent_body">Open a PDF, Word, Excel or PowerPoint file to get started. Everything stays on this device.</string>
+    <string name="no_recent_body">Open a PDF, Word, Excel or PowerPoint file, or tap + to start a new document or spreadsheet. Everything stays on this device.</string>
     <string name="remove_from_recents">Remove from recent files</string>
     <string name="back">Back</string>
     <string name="share">Share</string>
@@ -26,4 +26,10 @@
     <string name="saved">Saved</string>
     <string name="saved_copy">Saved as a copy</string>
     <string name="save_failed">Couldn\'t save. The original file has not been changed.</string>
+    <string name="new_file">New file</string>
+    <string name="new_document">New document</string>
+    <string name="new_spreadsheet">New spreadsheet</string>
+    <string name="new_document_name">Document</string>
+    <string name="new_spreadsheet_name">Spreadsheet</string>
+    <string name="create_failed">Couldn\'t create the file</string>
 </resources>

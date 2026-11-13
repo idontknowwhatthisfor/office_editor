@@ -147,7 +147,7 @@ class DocxEditor {
     this.listen();
     this.history = [this.view.innerHTML];
     registerEditor({ fileName: this.fileName, produce: () => this.produce(), saved: (r) => this.saved(r) });
-    toast(t('docxEditHint'));
+    toast(t(this.view.querySelector('.oe-locked') ? 'docxEditHint' : 'docxEditHintPlain'));
   }
 
   /**
@@ -277,6 +277,22 @@ class DocxEditor {
       }
     });
     this.view.addEventListener('input', () => this.changed(false));
+    // A tap on the paper below the text (all of the page, in a new document) goes to the end of
+    // the last paragraph that can be edited, as in Word.
+    this.view.addEventListener('click', (e) => {
+      const target = e.target as Element;
+      if (target.closest('p, table, img') || !target.closest('section.docx')) return;
+      const paras = [...this.view.querySelectorAll<HTMLElement>('p[contenteditable="true"]')];
+      const last = paras.filter((p) => p.getBoundingClientRect().top <= e.clientY).pop() ?? paras[0];
+      if (!last) return;
+      last.focus();
+      const caret = document.createRange();
+      caret.selectNodeContents(last);
+      caret.collapse(false);
+      const sel = getSelection()!;
+      sel.removeAllRanges();
+      sel.addRange(caret);
+    });
   }
 
   /** Enter: the text after the caret becomes a new paragraph like this one. */
@@ -289,6 +305,8 @@ class DocxEditor {
     tail.setEnd(p, p.childNodes.length);
     const rest = tail.extractContents();
     const next = p.cloneNode(false) as HTMLElement;
+    // Enter at the end of a heading starts normal text, as in Word.
+    if (!rest.textContent && p.dataset.heading?.startsWith('h')) next.dataset.heading = 'normal';
     next.append(rest);
     for (const empty of [p, next]) if (!empty.textContent) empty.append(document.createElement('br'));
     p.after(next);

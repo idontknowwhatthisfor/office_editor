@@ -94,7 +94,7 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                 val canWrite = canOverwrite(this, doc.uri)
                 runOnUiThread { writable = canWrite }
             }
-            webView = createDocumentWebView(this, doc, this)
+            webView = createDocumentWebView(this, doc, this, intent.getBooleanExtra(EXTRA_START_EDITING, false))
         } else if (uri != null && doc == null) {
             recents.remove(uri)
         }
@@ -317,6 +317,8 @@ class ViewerActivity : ComponentActivity(), EditorHost {
     companion object {
         /** Path of a private copy kept by [RecentFiles], used instead of intent data. */
         const val EXTRA_OWN_COPY = "com.officeeditor.OWN_COPY"
+        /** Open straight into edit mode (a new blank document). */
+        const val EXTRA_START_EDITING = "com.officeeditor.START_EDITING"
     }
 
     /**

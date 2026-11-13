@@ -19,7 +19,9 @@ export const GUTTER = 8;
  *
  * docx-preview turns the document's XML into styled HTML; paginate.ts then breaks it into pages.
  */
-export async function openDocx(root: HTMLElement, data: ArrayBuffer, fileName = 'document.docx'): Promise<void> {
+export async function openDocx(
+  root: HTMLElement, data: ArrayBuffer, fileName = 'document.docx', startEditing = false,
+): Promise<void> {
   const view = document.createElement('div');
   view.className = 'docx-view';
   try {
@@ -79,6 +81,7 @@ export async function openDocx(root: HTMLElement, data: ArrayBuffer, fileName = 
   };
   fit();
   addPageBar(root, view, [...wrapper.children] as HTMLElement[], pageWidth, edit);
+  if (startEditing) await edit();
   let width = document.documentElement.clientWidth;
   window.addEventListener('resize', () => {
     if (document.documentElement.clientWidth !== width) {
@@ -178,11 +181,17 @@ export function scaleLineHeights(view: HTMLElement): { measure(): void } {
       view.append(probe);
       // Font and size are set on the runs (spans), not the paragraph. But a line is at least as
       // tall as the paragraph's own font needs, so a paragraph of 9pt runs would still get 12pt
-      // lines. Give each paragraph its first run's font. (Read everything, then write.)
+      // lines. Give each paragraph its first run's font. An empty paragraph (a new document's)
+      // gets what a run in it would have: the document's default font, which docx-preview sets
+      // on spans only. (Read everything, then write.)
       const paragraphs = [...view.querySelectorAll<HTMLElement>('p')].map((p) => {
-        const run = p.querySelector('span');
-        const style = getComputedStyle(run ?? p);
-        return { p, family: style.fontFamily, size: run ? style.fontSize : '' };
+        let run = p.querySelector('span');
+        const temporary = !run;
+        if (!run) run = p.appendChild(document.createElement('span'));
+        const style = getComputedStyle(run);
+        const font = { p, family: style.fontFamily, size: style.fontSize };
+        if (temporary) run.remove();
+        return font;
       });
       const ratios = new Map<string, string>();
       for (const { p, family, size } of paragraphs) {
