@@ -31,4 +31,8 @@
     <string name="new_document_name">Dokumen</string>
     <string name="new_spreadsheet_name">Spreadsheet</string>
     <string name="create_failed">File tidak bisa dibuat</string>
+    <string name="more_options">Opsi lainnya</string>
+    <string name="export_pdf">Ekspor ke PDF</string>
+    <string name="export_save_first">Simpan perubahan dulu, lalu ekspor.</string>
+    <string name="export_failed">File ini tidak bisa diekspor</string>
 </resources>

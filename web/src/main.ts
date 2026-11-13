@@ -24,6 +24,16 @@ async function open(info: DocInfo, load: () => Promise<ArrayBuffer>): Promise<vo
     return;
   }
   console.log(`opened ${info.format} document, ${data.byteLength} bytes`);
+  if (info.print) {
+    const { preparePrint } = await import('./print');
+    const size = await preparePrint(app, info.format, data).catch((e) => {
+      console.error('print layout failed', e);
+      return null;
+    });
+    if (size) window.OfficeBridge?.printReady?.(size.width, size.height);
+    else window.OfficeBridge?.printFailed?.();
+    return;
+  }
   if (info.format === 'pdf') {
     const { openPdf } = await import('./pdf/viewer');
     await openPdf(app, { data }, { name: info.name, size: data.byteLength });
@@ -47,15 +57,17 @@ async function fetchBytes(url: string): Promise<ArrayBuffer> {
 
 const doc = nativeDocument();
 // Dev server only: `?file=/@fs/abs/path/to/test-files/sample.docx` opens a file without the picker
-// (add `&edit` to open it in edit mode, as a new document does).
+// (add `&edit` to open it in edit mode, as a new document does; `&print` shows the print layout).
 const devFile = import.meta.env.DEV ? new URLSearchParams(location.search).get('file') : null;
 if (doc) {
   void open(doc, () => fetchBytes(doc.url));
 } else if (devFile) {
   const name = devFile.split('/').pop()!;
   const format = name.split('.').pop()!.toLowerCase() as DocFormat;
-  const edit = new URLSearchParams(location.search).has('edit');
-  void open({ name, format, mime: '', size: -1, url: devFile, edit }, () => fetchBytes(devFile));
+  const params = new URLSearchParams(location.search);
+  const edit = params.has('edit');
+  const print = params.has('print');
+  void open({ name, format, mime: '', size: -1, url: devFile, edit, print }, () => fetchBytes(devFile));
 } else {
   // Desktop browser during development: pick a local file.
   const input = document.createElement('input');

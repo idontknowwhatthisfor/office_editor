@@ -5,6 +5,43 @@ import { showMessage } from '../message';
 import { Deck } from './deck';
 import { renderSlide, type RenderedSlide } from './render';
 
+/**
+ * "Export as PDF": one slide per page. Android's PDF printer only offers standard paper, so each
+ * slide is scaled to fit landscape A4 and centred on it (as PowerPoint prints slides on paper).
+ * Returns the page size in CSS px.
+ */
+export async function printPptx(root: HTMLElement, data: ArrayBuffer): Promise<{ width: number; height: number } | null> {
+  let deck: Deck;
+  try {
+    deck = await Deck.open(data);
+  } catch (e) {
+    console.error('pptx open failed', e);
+    return null;
+  }
+  const width = 1123;
+  const height = 794;
+  const scale = Math.min(width / deck.width, height / deck.height);
+  const pages: HTMLElement[] = [];
+  for (let i = 0; i < deck.slidePaths.length; i++) {
+    const page = el('div', 'print-page');
+    page.style.width = `${width}px`;
+    page.style.height = `${height}px`;
+    const holder = el('div');
+    holder.style.cssText = `position:absolute;width:${deck.width}px;height:${deck.height}px;` +
+      `left:${(width - deck.width * scale) / 2}px;top:${(height - deck.height * scale) / 2}px;` +
+      `transform:scale(${scale});transform-origin:0 0`;
+    try {
+      holder.append((await renderSlide(deck, i)).el);
+    } catch (e) {
+      console.error(`slide ${i + 1} failed`, e);
+    }
+    page.append(holder);
+    pages.push(page);
+  }
+  root.replaceChildren(...pages);
+  return { width, height };
+}
+
 const GAP = 8;
 const THUMB_H = 54;
 const MAX_ZOOM = 5;

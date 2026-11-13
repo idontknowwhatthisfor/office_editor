@@ -31,7 +31,13 @@ private const val DOC_PATH = "/doc/"
  * ranges). That avoids base64-encoding whole files across the JS bridge. Any other URL is refused.
  */
 @SuppressLint("SetJavaScriptEnabled")
-fun createDocumentWebView(context: Context, doc: DocumentInfo, host: EditorHost, startEditing: Boolean = false): WebView {
+fun createDocumentWebView(
+    context: Context,
+    doc: DocumentInfo,
+    host: EditorHost,
+    startEditing: Boolean = false,
+    print: Boolean = false,
+): WebView {
     val format = requireNotNull(doc.format)
     val assetLoader = WebViewAssetLoader.Builder()
         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
@@ -79,7 +85,7 @@ fun createDocumentWebView(context: Context, doc: DocumentInfo, host: EditorHost,
                 return true
             }
         }
-        addJavascriptInterface(Bridge(doc, format, host, startEditing), "OfficeBridge")
+        addJavascriptInterface(Bridge(doc, format, host, startEditing, print), "OfficeBridge")
         loadUrl(VIEWER_URL)
     }
 }
@@ -164,6 +170,9 @@ interface EditorHost {
     val saves: SaveReceiver
     /** All chunks of an edited file have arrived; [mode] is "overwrite" or "copy". */
     fun finishSave(token: Int, mode: String)
+    /** Export as PDF: the print layout is ready; first page size in CSS px (1/96 inch). */
+    fun printReady(width: Double, height: Double) = Unit
+    fun printFailed() = Unit
 }
 
 /** What the web viewers can ask the native shell. Called on a WebView thread, not the UI thread. */
@@ -172,10 +181,11 @@ private class Bridge(
     private val format: DocFormat,
     private val host: EditorHost,
     private val startEditing: Boolean,
+    private val print: Boolean,
 ) {
     /**
-     * The open document as JSON: `{name, format, mime, size, url, edit}`; fetch `url` for the
-     * bytes. `edit`: open in edit mode.
+     * The open document as JSON: `{name, format, mime, size, url, edit, print}`; fetch `url` for
+     * the bytes. `edit`: open in edit mode. `print`: lay it out for Export as PDF.
      */
     @JavascriptInterface
     fun getDocument(): String = JSONObject()
@@ -185,6 +195,7 @@ private class Bridge(
         .put("size", doc.size)
         .put("url", DOC_PATH + "current")
         .put("edit", startEditing)
+        .put("print", print)
         .toString()
 
     @JavascriptInterface
@@ -199,4 +210,10 @@ private class Bridge(
 
     @JavascriptInterface
     fun finishSave(token: Int, mode: String) = host.finishSave(token, mode)
+
+    @JavascriptInterface
+    fun printReady(width: Double, height: Double) = host.printReady(width, height)
+
+    @JavascriptInterface
+    fun printFailed() = host.printFailed()
 }

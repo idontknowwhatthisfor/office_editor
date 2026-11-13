@@ -13,6 +13,8 @@ export interface DocInfo {
   url: string;
   /** Open in edit mode (a new blank document). */
   edit?: boolean;
+  /** Lay the document out for "Export as PDF" (print.ts) instead of showing it. */
+  print?: boolean;
 }
 
 declare global {
@@ -24,6 +26,9 @@ declare global {
       beginSave?(): number;
       writeChunk?(token: number, base64: string): void;
       finishSave?(token: number, mode: string): void;
+      /** Export as PDF: the print layout is ready (page size in CSS px), or failed. */
+      printReady?(width: number, height: number): void;
+      printFailed?(): void;
     };
   }
 }

@@ -25,7 +25,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.union
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
@@ -63,6 +68,10 @@ class ViewerActivity : ComponentActivity(), EditorHost {
     private var saving by mutableStateOf(false)
     private var writable by mutableStateOf(false)
     private var dialog by mutableStateOf(Dialog.NONE)
+    /** Export as PDF: a second, hidden WebView with the document's print layout. */
+    private var printView by mutableStateOf<WebView?>(null)
+    private var exporting by mutableStateOf(false)
+    private var menuOpen by mutableStateOf(false)
     /** Leave the screen once the save in progress succeeds (the user chose Save on leaving). */
     private var closeAfterSave = false
     private var pendingCopy: File? = null
@@ -117,7 +126,7 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                                 }
                             },
                             actions = {
-                                if (saving) {
+                                if (saving || exporting) {
                                     CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp)
                                 } else if (unsaved) {
                                     TextButton(onClick = { dialog = Dialog.SAVE }) { Text(stringResource(R.string.save)) }
@@ -125,6 +134,23 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                                 if (doc != null && error == null) {
                                     IconButton(onClick = { share(doc) }) {
                                         Icon(Icons.Filled.Share, stringResource(R.string.share))
+                                    }
+                                }
+                                if (doc != null && error == null && doc.format != DocFormat.PDF) {
+                                    Box {
+                                        IconButton(onClick = { menuOpen = true }) {
+                                            Icon(Icons.Filled.MoreVert, stringResource(R.string.more_options))
+                                        }
+                                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.export_pdf)) },
+                                                enabled = !saving && !exporting,
+                                                onClick = {
+                                                    menuOpen = false
+                                                    exportPdf(doc)
+                                                },
+                                            )
+                                        }
                                     }
                                 }
                             },
@@ -136,7 +162,11 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                 ) { padding ->
                     val view = webView
                     if (view != null) {
-                        AndroidView(factory = { view }, modifier = Modifier.fillMaxSize().padding(padding))
+                        Box(Modifier.fillMaxSize().padding(padding)) {
+                            // The print layout renders underneath, out of sight.
+                            printView?.let { print -> key(print) { AndroidView(factory = { print }, modifier = Modifier.fillMaxSize()) } }
+                            AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
+                        }
                     } else {
                         Column(
                             modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
@@ -293,7 +323,49 @@ class ViewerActivity : ComponentActivity(), EditorHost {
         )
     }
 
+    // ---- export as PDF (Printing.kt) ----
+
+    /** Lays out the saved file for paper in a hidden WebView; [printReady] continues. */
+    private fun exportPdf(doc: DocumentInfo) {
+        if (unsaved) {
+            Toast.makeText(this, R.string.export_save_first, Toast.LENGTH_LONG).show()
+            return
+        }
+        exporting = true
+        printView = createDocumentWebView(this, doc, this, print = true)
+    }
+
+    override fun printReady(width: Double, height: Double) {
+        runOnUiThread {
+            val view = printView ?: return@runOnUiThread
+            val name = doc?.name?.substringBeforeLast('.') ?: getString(R.string.untitled)
+            try {
+                printWebView(this, view, name, width, height) { endExport() }
+                exporting = false
+            } catch (e: Exception) {
+                printFailed()
+            }
+        }
+    }
+
+    override fun printFailed() {
+        runOnUiThread {
+            endExport()
+            Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun endExport() {
+        val view = printView
+        printView = null
+        exporting = false
+        // Destroyed once it has left the layout.
+        view?.let { window.decorView.post { it.destroy() } }
+    }
+
     override fun onDestroy() {
+        printView?.destroy()
+        printView = null
         webView?.destroy()
         webView = null
         super.onDestroy()

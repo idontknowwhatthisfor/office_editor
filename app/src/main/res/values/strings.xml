@@ -32,4 +32,8 @@
     <string name="new_document_name">Document</string>
     <string name="new_spreadsheet_name">Spreadsheet</string>
     <string name="create_failed">Couldn\'t create the file</string>
+    <string name="more_options">More options</string>
+    <string name="export_pdf">Export as PDF</string>
+    <string name="export_save_first">Save your changes first, then export.</string>
+    <string name="export_failed">Couldn\'t export this file</string>
 </resources>

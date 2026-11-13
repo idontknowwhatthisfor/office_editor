@@ -62,6 +62,15 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     value. Sheets with Excel tables can't have rows/columns inserted (would break the table).
   - `src/ui.ts` — dialogs, menus, toast (used by the spreadsheet editor).
   - `src/pagebar.ts` — the bottom bar shared by the PDF and Word viewers.
+  - `src/print.ts` — "Export as PDF" (⋮ menu, Word/Excel/PowerPoint). The shell loads the saved
+    file a second time in a hidden WebView with `print` set (`Printing.kt`); the page lays it
+    out for paper (`printDocx`: the paginated pages; `printXlsx`: each sheet's used range on A4,
+    scaled to the width, no gridlines; `printPptx`: slides centred on landscape A4) and calls
+    `OfficeBridge.printReady(w, h)`; the shell opens Android's print dialog, whose "Save as PDF"
+    writes the file. Android's PDF printer only takes standard paper sizes. Scale print layouts
+    with CSS `zoom`, not a transform: the print engine shrinks the whole document to fit an
+    element's unscaled width. Dev: `&print` shows the layout, and headless Chrome
+    (`--headless=new --print-to-pdf=out.pdf <url>`) prints it as the phone does.
   - `src/pptx/` — read-only presentation viewer, drawn by our own code (pptx-preview, the PRD's
     candidate, ships only minified code with no source or licence file). `deck.ts` loads
     slide → layout → master → theme; `render.ts` draws a slide as HTML (shapes as SVG outlines

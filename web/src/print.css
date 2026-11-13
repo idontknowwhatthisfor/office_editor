@@ -1,0 +1,23 @@
+/* "Export as PDF" (print.ts): the page holds only the printed sheets, on white. */
+html.printing,
+html.printing body {
+  margin: 0;
+  padding: 0;
+  background: #fff;
+  color: #000;
+  color-scheme: only light;
+  /* Fills and shading are part of the document; print them. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.print-page {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  break-after: page;
+}
+
+.print-page:last-child {
+  break-after: auto;
+}

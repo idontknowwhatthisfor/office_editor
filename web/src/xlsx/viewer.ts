@@ -39,6 +39,44 @@ export async function openXlsx(root: HTMLElement, data: ArrayBuffer): Promise<vo
   await new XlsxViewer(root, book).show(book.activeSheet);
 }
 
+/** "Export as PDF": the workbook's print layout (see XlsxViewer.printPages). Returns the page size in CSS px. */
+export async function printXlsx(root: HTMLElement, data: ArrayBuffer): Promise<{ width: number; height: number } | null> {
+  let book: Workbook;
+  try {
+    book = await Workbook.open(data);
+  } catch (e) {
+    console.error('xlsx open failed', e);
+    return null;
+  }
+  const viewer = new XlsxViewer(root, book);
+  const { pages, width, height } = await viewer.printPages();
+  // The interactive view stays in the page, hidden, for its style sheet of cell formats.
+  (root.firstElementChild as HTMLElement).style.display = 'none';
+  root.append(...pages);
+  return { width, height };
+}
+
+/**
+ * The cells that print: values, fills, borders and merges. Null for an empty sheet.
+ */
+function usedRange(sheet: Sheet, formats: CellFormat[]): Range | null {
+  let r1 = -1;
+  let c1 = -1;
+  sheet.rows.forEach((row, r) => {
+    row?.forEach((cell, c) => {
+      const fmt = formats[cell.xf];
+      if (cell.t === 'z' && !fmt?.fill && !fmt?.border) return;
+      if (r > r1) r1 = r;
+      if (c > c1) c1 = c;
+    });
+  });
+  for (const m of sheet.merges) {
+    r1 = Math.max(r1, m.r1);
+    c1 = Math.max(c1, m.c1);
+  }
+  return r1 < 0 ? null : { r0: 0, c0: 0, r1, c1 };
+}
+
 interface Geometry {
   /** Left edge of each column (and the right edge of the last), sheet px. */
   colX: Float64Array;
@@ -320,6 +358,94 @@ class XlsxViewer {
     };
   }
 
+  // ---------------------------------------------------------------- printing
+
+  /**
+   * "Export as PDF": every visible worksheet's used range on A4 pages, as Excel prints by
+   * default (no gridlines or headings, 0.7"/0.75" margins), scaled down to fit the page width
+   * rather than splitting columns across pages. Portrait, or landscape when a sheet would have
+   * to shrink below 70% in portrait. Pages break between rows.
+   */
+  async printPages(): Promise<{ pages: HTMLElement[]; width: number; height: number }> {
+    await this.fontsReady;
+    const sheets: { index: number; sheet: Sheet; used: Range }[] = [];
+    for (let index = 0; index < this.book.sheets.length; index++) {
+      const entry = this.book.sheets[index];
+      if (entry.hidden || entry.kind !== 'worksheet') continue;
+      const sheet = await this.book.sheet(index);
+      const used = usedRange(sheet, this.book.formats);
+      if (used) sheets.push({ index, sheet, used });
+    }
+    const usedWidth = (sheet: Sheet, used: Range) => {
+      let w = 0;
+      for (let c = 0; c <= used.c1; c++) w += sheet.colWidths[c];
+      return w;
+    };
+    const A4 = { w: 794, h: 1123 };
+    const MX = 67;
+    const MY = 72;
+    const landscape = sheets.some(({ sheet, used }) => (A4.w - 2 * MX) / usedWidth(sheet, used) < 0.7);
+    const width = landscape ? A4.h : A4.w;
+    const height = landscape ? A4.w : A4.h;
+
+    const pages: HTMLElement[] = [];
+    for (const { index, sheet, used } of sheets) {
+      this.index = index;
+      this.sheet = sheet;
+      this.sel = null;
+      this.displays = new WeakMap();
+      this.layout(sheet);
+      const { colX, rowY } = this.g;
+      this.addSpill(sheet, used);
+      const sheetWidth = colX[used.c1 + 1];
+      const scale = Math.min(1, (width - 2 * MX) / sheetWidth);
+      const band = (height - 2 * MY) / scale;
+      for (let r = 0; r <= used.r1;) {
+        let end = r;
+        while (end < used.r1 && rowY[end + 2] - rowY[r] <= band) end++;
+        const top = rowY[r];
+        const zone: Zone = {
+          rLo: r, rHi: end, cLo: 0, cHi: used.c1,
+          x: (c) => colX[c], y: (row) => rowY[row] - top, colHeads: false, rowHeads: false,
+        };
+        const cells = el('div', 'xlsx-cells');
+        // CSS zoom, not a transform: the print engine shrinks the whole document to fit the
+        // widest element's unscaled size, and a transform leaves that size as it was.
+        cells.style.cssText = `left:${MX / scale}px;top:${MY / scale}px;width:${sheetWidth}px;height:${rowY[end + 1] - top}px;` +
+          `zoom:${scale}`;
+        cells.innerHTML = this.render(zone, r, end, 0, used.c1, false);
+        const page = el('div', 'print-page xlsx-print-page');
+        page.style.width = `${width}px`;
+        page.style.height = `${height}px`;
+        page.append(cells);
+        pages.push(page);
+        r = end + 1;
+      }
+    }
+    if (!pages.length) {
+      const page = el('div', 'print-page');
+      page.style.width = `${width}px`;
+      page.style.height = `${height}px`;
+      pages.push(page);
+    }
+    return { pages, width, height };
+  }
+
+  /** Widens `used` to take in text that runs on past its last column, as Excel prints it. */
+  private addSpill(sheet: Sheet, used: Range): void {
+    const { colX } = this.g;
+    const last = colX.length - 2;
+    sheet.rows.forEach((row) => {
+      row?.forEach((cell, c) => {
+        if (cell.t !== 's') return;
+        const fmt = this.book.formats[cell.xf] ?? this.book.formats[0];
+        if (fmt.wrap || (fmt.h !== 'general' && fmt.h !== 'left')) return;
+        const end = colX[c] + this.measure(this.display(cell, fmt).text, fmt.font) + 2 * PAD + 1;
+        while (used.c1 < last && colX[used.c1 + 1] < end) used.c1++;
+      });
+    });
+  }
+
   // ---------------------------------------------------------------- rendering
 
   private update(): void {
@@ -344,8 +470,8 @@ class XlsxViewer {
     this.bodyCells.innerHTML = this.render(z.body, w.r0, w.r1, w.c0, w.c1);
   }
 
-  /** HTML for rows r0..r1 × columns c0..c1 of one zone, with its headers. */
-  private render(zone: Zone, r0: number, r1: number, c0: number, c1: number): string {
+  /** HTML for rows r0..r1 × columns c0..c1 of one zone, with its headers (and gridlines). */
+  private render(zone: Zone, r0: number, r1: number, c0: number, c1: number, gridlines = true): string {
     const sheet = this.sheet!;
     const { colX, rowY, hdrW } = this.g;
     const formats = this.book.formats;
@@ -380,7 +506,7 @@ class XlsxViewer {
     const xb = zone.x(c1 + 1);
     const ya = zone.y(r0);
     const yb = zone.y(r1 + 1);
-    if (sheet.showGrid) {
+    if (sheet.showGrid && gridlines) {
       for (let c = c0; c <= c1; c++) {
         if (colX[c + 1] > colX[c]) grid.push(`<i class="gv" style="left:${zone.x(c + 1) - 1}px;top:${ya}px;height:${yb - ya}px"></i>`);
       }

@@ -67,6 +67,22 @@
   min-height: 0;
 }
 
+/* ---- Export as PDF (printDocx): pages at real size, one per sheet of paper ---- */
+.docx-view.docx-print {
+  margin: 0;
+  overflow: visible;
+}
+
+.docx-print .docx-wrapper > section.docx {
+  margin: 0;
+  box-shadow: none;
+  break-after: page;
+}
+
+.docx-print .docx-wrapper > section.docx:last-child {
+  break-after: auto;
+}
+
 /* ------------------------------------------------------------ editing (editor.ts) */
 
 /* The edit view: real-size paper scaled to the screen, as in the viewer (editor.ts). */

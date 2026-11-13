@@ -22,26 +22,9 @@ export const GUTTER = 8;
 export async function openDocx(
   root: HTMLElement, data: ArrayBuffer, fileName = 'document.docx', startEditing = false,
 ): Promise<void> {
-  const view = document.createElement('div');
-  view.className = 'docx-view';
-  try {
-    const options = { className: 'docx', inWrapper: true, breakPages: true, useBase64URL: true };
-    const parsed = await parseAsync(data, options);
-    markKeepWithNext(parsed, await headerRows(data));
-    view.append(...(await renderDocument(parsed, options)));
-  } catch (e) {
-    console.error('docx open failed', e);
-    showMessage(root, t('docxInvalid'));
-    return;
-  }
-
-  // The native shell blocks all navigation, but don't leave script or file URLs in the page.
-  for (const link of view.querySelectorAll('a[href]')) {
-    const href = link.getAttribute('href')!;
-    if (!/^(https?:|mailto:|#)/i.test(href)) link.removeAttribute('href');
-  }
-
-  const lineHeights = scaleLineHeights(view);
+  const pages = await renderPages(root, data);
+  if (!pages) return;
+  const { view, wrapper } = pages;
 
   let editing = false;
   const edit = async () => {
@@ -55,15 +38,6 @@ export async function openDocx(
       editing = false;
     }
   };
-  root.replaceChildren(view);
-  const wrapper = view.querySelector<HTMLElement>('.docx-wrapper');
-  if (!wrapper) return;
-
-  // Page breaks depend on line breaks, which depend on the fonts: wait for the ones in use.
-  await fontsLoaded(view);
-  lineHeights.measure();
-  paginate(wrapper);
-  numberPages(wrapper);
 
   // Scale the pages to the screen width. A transform only scales the painted result, so the
   // layout stays exactly as paginated (CSS zoom would re-lay text out at the smaller size, where
@@ -89,6 +63,70 @@ export async function openDocx(
       fit();
     }
   });
+}
+
+/**
+ * "Export as PDF": the pages at their real size, one per printed sheet. Each page size the
+ * document uses becomes a named @page, so a landscape section prints landscape. Returns the
+ * first page's size in CSS px.
+ */
+export async function printDocx(root: HTMLElement, data: ArrayBuffer): Promise<{ width: number; height: number } | null> {
+  const pages = await renderPages(root, data);
+  if (!pages) return null;
+  pages.view.classList.add('docx-print');
+  const sizes = new Map<string, string>();
+  const rules: string[] = [];
+  for (const page of pages.wrapper.children as HTMLCollectionOf<HTMLElement>) {
+    const key = `${page.offsetWidth}px ${page.offsetHeight}px`;
+    let name = sizes.get(key);
+    if (!name) {
+      sizes.set(key, (name = `docx-page-${sizes.size}`));
+      rules.push(`@page ${name} { size: ${key}; margin: 0; }`);
+    }
+    page.style.setProperty('page', name);
+  }
+  const style = document.createElement('style');
+  style.textContent = rules.join('\n');
+  root.append(style);
+  const first = pages.wrapper.firstElementChild as HTMLElement;
+  return { width: first.offsetWidth, height: first.offsetHeight };
+}
+
+/**
+ * Renders the document into `root` and splits it into pages, once its fonts are loaded. Shows
+ * a message and returns null if the file can't be read.
+ */
+async function renderPages(root: HTMLElement, data: ArrayBuffer): Promise<{ view: HTMLElement; wrapper: HTMLElement } | null> {
+  const view = document.createElement('div');
+  view.className = 'docx-view';
+  try {
+    const options = { className: 'docx', inWrapper: true, breakPages: true, useBase64URL: true };
+    const parsed = await parseAsync(data, options);
+    markKeepWithNext(parsed, await headerRows(data));
+    view.append(...(await renderDocument(parsed, options)));
+  } catch (e) {
+    console.error('docx open failed', e);
+    showMessage(root, t('docxInvalid'));
+    return null;
+  }
+
+  // The native shell blocks all navigation, but don't leave script or file URLs in the page.
+  for (const link of view.querySelectorAll('a[href]')) {
+    const href = link.getAttribute('href')!;
+    if (!/^(https?:|mailto:|#)/i.test(href)) link.removeAttribute('href');
+  }
+
+  const lineHeights = scaleLineHeights(view);
+  root.replaceChildren(view);
+  const wrapper = view.querySelector<HTMLElement>('.docx-wrapper');
+  if (!wrapper) return null;
+
+  // Page breaks depend on line breaks, which depend on the fonts: wait for the ones in use.
+  await fontsLoaded(view);
+  lineHeights.measure();
+  paginate(wrapper);
+  numberPages(wrapper);
+  return { view, wrapper };
 }
 
 /** Waits for the fonts the rendered document `view` uses (it must be in the page). */
