@@ -11,12 +11,43 @@ export type Edit =
 
 export type FormValue = string | boolean | string[];
 
-export const COLOURS = {
-  highlight: [1, 0.89, 0.2] as Rgb,
-  underline: [0.86, 0.15, 0.15] as Rgb,
-  ink: [0.1, 0.3, 0.85] as Rgb,
-  text: [0, 0, 0] as Rgb,
+export type ColourTarget = 'highlight' | 'underline' | 'ink' | 'text';
+
+/** Defaults for each tool; the user can pick another from PALETTES. */
+export const COLOURS: Record<ColourTarget, Rgb> = {
+  highlight: [1, 0.89, 0.2],
+  underline: [0.86, 0.15, 0.15],
+  ink: [0.1, 0.3, 0.85],
+  text: [0, 0, 0],
 };
+
+export type ColourName = 'yellow' | 'green' | 'blue' | 'pink' | 'orange' | 'black' | 'red' | 'purple';
+
+/** Highlights are multiplied onto the page, so they take light colours; lines and text dark ones. */
+const LIGHT: [ColourName, Rgb][] = [
+  ['yellow', [1, 0.89, 0.2]],
+  ['green', [0.55, 0.9, 0.4]],
+  ['blue', [0.45, 0.8, 1]],
+  ['pink', [1, 0.55, 0.8]],
+  ['orange', [1, 0.7, 0.3]],
+];
+const DARK: [ColourName, Rgb][] = [
+  ['black', [0, 0, 0]],
+  ['blue', [0.1, 0.3, 0.85]],
+  ['red', [0.86, 0.15, 0.15]],
+  ['green', [0.1, 0.55, 0.25]],
+  ['purple', [0.5, 0.2, 0.75]],
+  ['orange', [0.93, 0.47, 0.08]],
+];
+
+export const PALETTES: Record<ColourTarget, [ColourName, Rgb][]> = {
+  highlight: LIGHT,
+  underline: DARK,
+  ink: DARK,
+  text: DARK,
+};
+
+export const sameRgb = (a: Rgb, b: Rgb) => a.every((v, i) => Math.abs(v - b[i]) < 0.002);
 
 /** Maps PDF space to the page's viewport at scale 1 (CSS px of an unzoomed page). */
 export interface PageSpace {
@@ -28,7 +59,7 @@ export interface PageSpace {
   rotation: number;
 }
 
-const css = (c: Rgb) => `rgb(${c.map((v) => Math.round(v * 255)).join(' ')})`;
+export const css = (c: Rgb) => `rgb(${c.map((v) => Math.round(v * 255)).join(' ')})`;
 
 /** SVG markup for one edit, in viewport coordinates. */
 export function editSvg(edit: Edit, space: PageSpace): string {

@@ -32,7 +32,11 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     (tools, form inputs over the page, undo), `edits.ts` (the edit model, in PDF space),
     `write.ts` (pdf-lib: highlights, underlines, ink and text become real annotations with
     their own appearance streams; signatures are drawn into the page; form values get fresh
-    appearances; page rotation/deletion).
+    appearances; page rotation/deletion). Each tool's colour is picked from `PALETTES`
+    (`edits.ts`, kept in localStorage). `erase.ts`: the eraser button cycles whole-mark (a
+    stroke, text box or signature; one line of a highlight) → partial (cuts pen strokes) → off;
+    a swipe is one `erase` op mapping each touched edit to what it became, so undo is one step.
+    Only marks made since opening can be erased.
   - `src/docx/` — read-only Word viewer in page layout, as Word shows it. `docx-preview` renders
     the XML to HTML; `paginate.ts` splits it into pages (docx-preview only breaks at explicit
     page breaks); `viewer.ts` corrects line spacing, fills page numbers and scales pages to the

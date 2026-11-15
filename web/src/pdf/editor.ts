@@ -2,13 +2,14 @@ import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf
 import { t } from '../i18n';
 import { isDirty, registerEditor, setDirty, type SaveResult } from '../save';
 import { fontSizeField, parseFontSize } from '../ui';
-import { COLOURS, editSvg, type Edit, type FormValue, type PageSpace } from './edits';
+import { COLOURS, css, editSvg, PALETTES, sameRgb, type ColourTarget, type Edit, type FormValue, type PageSpace, type Rgb } from './edits';
+import { along, erasePart, eraseWhole, type Point } from './erase';
 
 // PDF editing (PRD M5): highlight and underline selected text, draw, add text, sign, rotate or
 // delete pages, and fill in forms. Edits stay in memory, drawn over the pages, until the user
 // saves; write.ts then puts them into the file.
 
-type Tool = 'none' | 'ink' | 'text' | 'place-signature';
+type Tool = 'none' | 'ink' | 'text' | 'place-signature' | 'erase-whole' | 'erase-part';
 
 interface PageState {
   el: HTMLElement;
@@ -19,6 +20,8 @@ interface PageState {
 
 type Op =
   | { kind: 'edit'; edit: Edit }
+  /** One swipe of an eraser: each edit it touched, and what that edit became. */
+  | { kind: 'erase'; page: number; changes: Map<Edit, Edit[]> }
   | { kind: 'rotate'; page: number }
   | { kind: 'delete'; page: number };
 
@@ -33,9 +36,12 @@ export interface EditorHost {
 }
 
 const SIGNATURE_KEY = 'officeeditor.signature';
+const COLOURS_KEY = 'officeeditor.pdfColours';
 /** Larger files are not edited: saving rewrites the whole file in memory. */
 const MAX_EDIT_BYTES = 150 * 1024 * 1024;
 const SIGNATURE_WIDTH = 150;
+/** The eraser's radius on screen, in CSS px, whatever the zoom. */
+const ERASER_RADIUS = 12;
 
 export class PdfEditor {
   readonly row = el('div', 'pagebar-row pdf-edit-row');
@@ -46,6 +52,10 @@ export class PdfEditor {
   private formInputs = new Map<string, HTMLElement[]>();
   private tool: Tool = 'none';
   private toolButtons = new Map<Tool, HTMLButtonElement>();
+  /** The colour each tool uses for new marks; kept on the device for next time. */
+  private colours = readColours();
+  private colourButton: HTMLButtonElement;
+  private eraserButton: HTMLButtonElement;
   private signature: { png: Uint8Array; url: string; ratio: number } | null = null;
   private undoButton: HTMLButtonElement;
   private redoButton: HTMLButtonElement;
@@ -64,6 +74,12 @@ export class PdfEditor {
     button(ICON_UNDERLINE, t('underline'), () => this.markSelection('underline'));
     this.toolButtons.set('ink', button(ICON_PEN, t('pen'), () => this.setTool(this.tool === 'ink' ? 'none' : 'ink')));
     this.toolButtons.set('text', button(ICON_TEXT, t('addText'), () => this.setTool(this.tool === 'text' ? 'none' : 'text')));
+    // One button for both erasers: whole marks, then partial, then off.
+    this.eraserButton = button('', t('eraser'), () =>
+      this.setTool(this.tool === 'erase-whole' ? 'erase-part' : this.tool === 'erase-part' ? 'none' : 'erase-whole'));
+    this.drawEraserButton();
+    this.colourButton = button('', t('colours'), () => void this.chooseColours());
+    this.drawColourButton();
     this.toolButtons.set('place-signature', button(ICON_SIGN, t('sign'), () => void this.chooseSignature()));
     button(ICON_PAGE, t('pageTools'), () => this.pageMenu());
     this.undoButton = button(ICON_UNDO, t('undo'), () => this.undo());
@@ -121,13 +137,20 @@ export class PdfEditor {
     if (this.hasForms) await this.addFormFields(state, proxy);
   }
 
-  private drawPage(index: number): void {
+  /** The edits as they now stand (added, less what was erased), in drawing order. */
+  private edits(page?: number): Edit[] {
+    let list: Edit[] = [];
+    for (const op of this.ops) {
+      if (op.kind === 'edit') list.push(op.edit);
+      else if (op.kind === 'erase') list = list.flatMap((e) => op.changes.get(e) ?? [e]);
+    }
+    return page === undefined ? list : list.filter((e) => e.page === page);
+  }
+
+  private drawPage(index: number, edits = this.edits(index)): void {
     const state = this.pages.get(index);
     if (!state) return;
-    state.overlay.innerHTML = this.ops
-      .filter((op): op is Extract<Op, { kind: 'edit' }> => op.kind === 'edit' && op.edit.page === index)
-      .map((op) => editSvg(op.edit, state.space))
-      .join('');
+    state.overlay.innerHTML = edits.map((edit) => editSvg(edit, state.space)).join('');
   }
 
   /** Rotations and deletions are applied when saving; until then a label says so. */
@@ -199,11 +222,14 @@ export class PdfEditor {
   private setTool(tool: Tool): void {
     this.tool = tool;
     for (const [name, b] of this.toolButtons) b.classList.toggle('active', name === tool);
+    this.drawEraserButton();
     // Drawing and placing take single-finger touches on the page instead of scrolling.
     document.body.classList.toggle('pdf-drawing', tool !== 'none');
     if (tool === 'ink') this.say(t('penHint'));
     else if (tool === 'text') this.say(t('textHint'));
     else if (tool === 'place-signature') this.say(t('placeHint'));
+    else if (tool === 'erase-whole') this.say(t('eraseWholeHint'));
+    else if (tool === 'erase-part') this.say(t('erasePartHint'));
   }
 
   private markSelection(kind: 'highlight' | 'underline'): void {
@@ -235,11 +261,25 @@ export class PdfEditor {
       this.say(t('selectTextFirst'));
       return;
     }
-    for (const [page, quads] of byPage) this.push({ kind: 'edit', edit: { kind, page, quads, colour: COLOURS[kind] } });
+    for (const [page, quads] of byPage) this.push({ kind: 'edit', edit: { kind, page, quads, colour: this.colours[kind] } });
     selection.removeAllRanges();
   }
 
+  private drawEraserButton(): void {
+    const part = this.tool === 'erase-part';
+    const b = this.eraserButton;
+    b.classList.toggle('active', part || this.tool === 'erase-whole');
+    const label = part ? t('eraserPart') : t('eraser');
+    b.setAttribute('aria-label', label);
+    b.title = label;
+    // The partial eraser: a smaller eraser leaving a dotted trail.
+    b.innerHTML = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">${part
+      ? `<g transform="translate(6 0) scale(0.75)"><path fill="currentColor" d="${ICON_ERASER}"/></g><path fill="currentColor" d="${ICON_DOTS}"/>`
+      : `<path fill="currentColor" d="${ICON_ERASER}"/>`}</svg>`;
+  }
+
   private listenDrawing(index: number, state: PageState): void {
+    let erasing: ReturnType<PdfEditor['startErasing']> | null = null;
     let path: number[] | null = null;
     let live: SVGPolylineElement | null = null;
     const local = (e: PointerEvent): [number, number] => {
@@ -259,16 +299,26 @@ export class PdfEditor {
         return;
       }
       capture(state.overlay, e.pointerId);
+      if (this.tool === 'erase-whole' || this.tool === 'erase-part') {
+        erasing = this.startErasing(index, state, this.tool === 'erase-part');
+        erasing.move(vx, vy);
+        return;
+      }
       path = [...state.space.toPdf(vx, vy)];
       live = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
       live.setAttribute('fill', 'none');
-      live.setAttribute('stroke', 'rgb(26 77 217)');
+      live.setAttribute('stroke', css(this.colours.ink));
       live.setAttribute('stroke-width', '2');
       live.setAttribute('stroke-linecap', 'round');
       live.setAttribute('points', `${vx},${vy}`);
       state.overlay.append(live);
     });
     state.overlay.addEventListener('pointermove', (e) => {
+      if (erasing) {
+        const coalesced = e.getCoalescedEvents?.() ?? [];
+        for (const ev of coalesced.length ? coalesced : [e]) erasing.move(...local(ev));
+        return;
+      }
       if (!path || !live) return;
       const coalesced = e.getCoalescedEvents?.() ?? [];
       for (const ev of coalesced.length ? coalesced : [e]) {
@@ -278,22 +328,86 @@ export class PdfEditor {
       }
     });
     const finish = () => {
+      if (erasing) {
+        erasing.end();
+        erasing = null;
+        return;
+      }
       if (!path) return;
       const done = path;
       path = null;
       live = null;
-      this.push({ kind: 'edit', edit: { kind: 'ink', page: index, paths: [done], colour: COLOURS.ink, width: 2 } });
+      this.push({ kind: 'edit', edit: { kind: 'ink', page: index, paths: [done], colour: this.colours.ink, width: 2 } });
     };
     state.overlay.addEventListener('pointerup', finish);
     state.overlay.addEventListener('pointercancel', finish);
+  }
+
+  /**
+   * One swipe of an eraser on a page. The page shows the result as it goes; the swipe becomes
+   * one operation (one undo step) when the finger lifts.
+   */
+  private startErasing(index: number, state: PageState, part: boolean) {
+    const base = this.edits(index);
+    const changes = new Map<Edit, Edit[]>();
+    /** For an edit the swipe produced, the original it came from. */
+    const origin = new Map<Edit, Edit>();
+    let last: Point | null = null;
+    // Radius in page units, so it is the same size on screen at any zoom.
+    const r = ERASER_RADIUS * (state.space.width / Math.max(1, state.overlay.getBoundingClientRect().width));
+    const current = () => base.flatMap((e) => changes.get(e) ?? [e]);
+    const cursor = (vx: number, vy: number) =>
+      `<circle cx="${vx.toFixed(2)}" cy="${vy.toFixed(2)}" r="${r.toFixed(2)}" fill="rgb(128 128 128 / 0.15)" stroke="rgb(90 90 90)" stroke-width="${(r / 12).toFixed(2)}"/>`;
+    return {
+      move: (vx: number, vy: number) => {
+        const p = state.space.toPdf(vx, vy);
+        const points = along(last ?? p, p, r / 2);
+        last = p;
+        for (const edit of current()) {
+          const result = part ? erasePart(edit, points, r) : eraseWhole(edit, points, r, state.space.rotation);
+          if (!result) continue;
+          const o = origin.get(edit) ?? edit;
+          const now = changes.get(o) ?? [o];
+          now.splice(now.indexOf(edit), 1, ...result);
+          changes.set(o, now);
+          for (const e of result) origin.set(e, o);
+        }
+        this.drawPage(index, current());
+        state.overlay.insertAdjacentHTML('beforeend', cursor(vx, vy));
+      },
+      end: () => {
+        if (changes.size) this.push({ kind: 'erase', page: index, changes });
+        else this.drawPage(index);
+      },
+    };
   }
 
   private async addText(index: number, state: PageState, vx: number, vy: number): Promise<void> {
     const result = await textDialog();
     if (!result) return;
     const [x, y] = state.space.toPdf(vx, vy);
-    this.push({ kind: 'edit', edit: { kind: 'text', page: index, x, y, text: result.text, size: result.size, colour: COLOURS.text } });
+    this.push({ kind: 'edit', edit: { kind: 'text', page: index, x, y, text: result.text, size: result.size, colour: this.colours.text } });
     this.setTool('none');
+  }
+
+  private async chooseColours(): Promise<void> {
+    await colourDialog(this.colours, () => {
+      this.drawColourButton();
+      try {
+        localStorage.setItem(COLOURS_KEY, JSON.stringify(this.colours));
+      } catch {
+        // Not kept for next time; still used now.
+      }
+    });
+  }
+
+  /** The button shows the four colours in use: highlight, underline / pen, text. */
+  private drawColourButton(): void {
+    const c = this.colours;
+    const dot = (x: number, y: number, rgb: Rgb) =>
+      `<circle cx="${x}" cy="${y}" r="4.6" fill="${css(rgb)}" stroke="currentColor" stroke-opacity="0.45" stroke-width="1"/>`;
+    this.colourButton.innerHTML = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">${
+      dot(7, 7, c.highlight)}${dot(17, 7, c.underline)}${dot(7, 17, c.ink)}${dot(17, 17, c.text)}</svg>`;
   }
 
   private async chooseSignature(): Promise<void> {
@@ -451,7 +565,7 @@ export class PdfEditor {
 
   private async produce(): Promise<Uint8Array> {
     const { writeEdits, EncryptedPdfError } = await import('./write');
-    const edits = this.ops.filter((op): op is Extract<Op, { kind: 'edit' }> => op.kind === 'edit').map((op) => op.edit);
+    const edits = this.edits();
     try {
       const original = await this.host.pdf.getData();
       return await writeEdits(original, edits, this.forms, this.pageOps());
@@ -533,6 +647,22 @@ function capture(el: Element, pointerId: number): void {
   }
 }
 
+function readColours(): Record<ColourTarget, Rgb> {
+  const colours = { ...COLOURS };
+  try {
+    const stored = JSON.parse(localStorage.getItem(COLOURS_KEY) ?? '{}') as Partial<Record<ColourTarget, Rgb>>;
+    for (const key of Object.keys(colours) as ColourTarget[]) {
+      const c = stored[key];
+      // Only colours the palette offers (a stored value from an older version may not be).
+      const known = c && PALETTES[key].find(([, rgb]) => sameRgb(rgb, c));
+      if (known) colours[key] = known[1];
+    }
+  } catch {
+    // Defaults.
+  }
+  return colours;
+}
+
 function readStored(): string | null {
   try {
     return localStorage.getItem(SIGNATURE_KEY);
@@ -603,6 +733,55 @@ function textDialog(): Promise<{ text: string; size: number } | null> {
       }, true),
     );
     area.focus();
+  });
+}
+
+const COLOUR_ROWS: [ColourTarget, Parameters<typeof t>[0]][] = [
+  ['highlight', 'highlight'],
+  ['underline', 'underline'],
+  ['ink', 'pen'],
+  ['text', 'colourText'],
+];
+
+/** One row of swatches per tool; a tap changes that tool's colour at once (`changed` is told). */
+function colourDialog(colours: Record<ColourTarget, Rgb>, changed: () => void): Promise<void> {
+  return new Promise((resolve) => {
+    const d = dialog(t('colours'));
+    for (const [target, label] of COLOUR_ROWS) {
+      const row = el('div', 'pdf-colour-row');
+      row.setAttribute('role', 'radiogroup');
+      const caption = el('span', 'pdf-colour-caption');
+      caption.textContent = t(label);
+      caption.id = `pdf-colour-${target}`;
+      row.setAttribute('aria-labelledby', caption.id);
+      const swatches = el('div', 'pdf-swatches');
+      const buttons: HTMLButtonElement[] = [];
+      for (const [name, rgb] of PALETTES[target]) {
+        const b = el('button', 'pdf-swatch');
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-label', t(`colour_${name}`));
+        b.title = t(`colour_${name}`);
+        b.style.setProperty('--swatch', css(rgb));
+        const mark = () => {
+          for (const other of buttons) other.setAttribute('aria-checked', String(other === b));
+        };
+        b.onclick = () => {
+          colours[target] = rgb;
+          mark();
+          changed();
+        };
+        buttons.push(b);
+        if (sameRgb(rgb, colours[target])) b.setAttribute('aria-checked', 'true');
+        else b.setAttribute('aria-checked', 'false');
+        swatches.append(b);
+      }
+      row.append(caption, swatches);
+      d.box.insertBefore(row, d.actions);
+    }
+    const hint = el('p', 'pdf-dialog-hint');
+    hint.textContent = t('coloursHint');
+    d.box.insertBefore(hint, d.actions);
+    d.actions.append(textButton(t('done'), () => { d.close(); resolve(); }, true));
   });
 }
 
@@ -738,4 +917,7 @@ const ICON_SIGN = 'M4.59 6.89c.7-.71 1.4-1.35 1.71-1.22.5.2 0 1.03-.3 1.52-.25.4
 const ICON_PAGE = 'M15.55 5.55 11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11a7.906 7.906 0 0 0-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.17 2.74-.71 3.9-1.61l-1.44-1.44c-.75.54-1.59.89-2.46 1.03zm3.89-2.42 1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z';
 const ICON_UNDO = 'M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z';
 const ICON_REDO = 'M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z';
+// Eraser: Material Design Icons "eraser" (Apache-2.0).
+const ICON_ERASER = 'M16.24 3.56l4.95 4.94c.78.79.78 2.05 0 2.84L12 20.53a4.008 4.008 0 0 1-5.66 0L2.81 17c-.78-.79-.78-2.05 0-2.84l10.6-10.6c.79-.78 2.05-.78 2.83 0M4.22 15.58l3.54 3.53c.78.79 2.04.79 2.83 0l3.53-3.53l-4.95-4.95l-4.95 4.95z';
+const ICON_DOTS = 'M2 21.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0zm5 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0zm5 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0z';
 const ICON_DONE = 'M9 16.17 4.83 12l-1.42 1.42L9 19 21 7l-1.41-1.41z';

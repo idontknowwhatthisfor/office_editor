@@ -160,14 +160,14 @@ body.pdf-drawing .pdf-edit-layer {
   scrollbar-width: none;
 }
 
-/* Nine tools must fit a phone's width (the bar is about 360 px there). */
+/* Eleven tools must fit a phone's width (the bar is about 360 px there). */
 .pagebar .pdf-edit-row {
   gap: 0;
 }
 
 .pagebar .pdf-edit-row .pagebar-icon {
   flex: 1 1 0;
-  min-width: 36px;
+  min-width: 32px;
   padding: 0;
 }
 
@@ -303,4 +303,37 @@ body.pdf-drawing .pdf-edit-layer {
   margin: 8px 0 0;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.pdf-colour-row {
+  margin-top: 12px;
+}
+
+.pdf-colour-caption {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.pdf-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 40 px touch targets: a selection ring, a gap, then the colour with a faint edge so black and
+   yellow show on either theme. */
+.pdf-swatch {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--swatch) padding-box;
+  box-shadow: inset 0 0 0 3px var(--surface), inset 0 0 0 4px rgb(128 128 128 / 0.5);
+}
+
+.pdf-swatch[aria-checked='true'] {
+  border-color: var(--accent);
 }
