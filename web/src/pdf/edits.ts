@@ -4,8 +4,8 @@
 export type Rgb = [number, number, number];
 
 export type Edit =
-  | { kind: 'highlight' | 'underline'; page: number; quads: number[][]; colour: Rgb }
-  | { kind: 'ink'; page: number; paths: number[][]; colour: Rgb; width: number }
+  | { kind: 'highlight' | 'underline'; page: number; quads: number[][]; colour: Rgb; opacity?: number }
+  | { kind: 'ink'; page: number; paths: number[][]; colour: Rgb; width: number; opacity?: number }
   | { kind: 'text'; page: number; x: number; y: number; text: string; size: number; colour: Rgb }
   | { kind: 'image'; page: number; x: number; y: number; w: number; h: number; png: Uint8Array; url: string };
 
@@ -13,41 +13,27 @@ export type FormValue = string | boolean | string[];
 
 export type ColourTarget = 'highlight' | 'underline' | 'ink' | 'text';
 
-/** Defaults for each tool; the user can pick another from PALETTES. */
-export const COLOURS: Record<ColourTarget, Rgb> = {
-  highlight: [1, 0.89, 0.2],
-  underline: [0.86, 0.15, 0.15],
-  ink: [0.1, 0.3, 0.85],
-  text: [0, 0, 0],
+/** How new marks look; the Style panel changes it and it is kept on the device. */
+export interface Style {
+  highlight: { colour: Rgb; opacity: number };
+  underline: { colour: Rgb; opacity: number };
+  /** width: pen thickness in PDF points. */
+  ink: { colour: Rgb; opacity: number; width: number };
+  text: { colour: Rgb };
+  /** size: eraser radius in CSS px (the same on screen at any zoom). */
+  eraser: { mode: 'whole' | 'part'; size: number };
+}
+
+export const DEFAULT_STYLE: Style = {
+  highlight: { colour: [1, 0.89, 0.2], opacity: 1 },
+  underline: { colour: [0.86, 0.15, 0.15], opacity: 1 },
+  ink: { colour: [0.1, 0.3, 0.85], opacity: 1, width: 2 },
+  text: { colour: [0, 0, 0] },
+  eraser: { mode: 'whole', size: 12 },
 };
 
-export type ColourName = 'yellow' | 'green' | 'blue' | 'pink' | 'orange' | 'black' | 'red' | 'purple';
-
-/** Highlights are multiplied onto the page, so they take light colours; lines and text dark ones. */
-const LIGHT: [ColourName, Rgb][] = [
-  ['yellow', [1, 0.89, 0.2]],
-  ['green', [0.55, 0.9, 0.4]],
-  ['blue', [0.45, 0.8, 1]],
-  ['pink', [1, 0.55, 0.8]],
-  ['orange', [1, 0.7, 0.3]],
-];
-const DARK: [ColourName, Rgb][] = [
-  ['black', [0, 0, 0]],
-  ['blue', [0.1, 0.3, 0.85]],
-  ['red', [0.86, 0.15, 0.15]],
-  ['green', [0.1, 0.55, 0.25]],
-  ['purple', [0.5, 0.2, 0.75]],
-  ['orange', [0.93, 0.47, 0.08]],
-];
-
-export const PALETTES: Record<ColourTarget, [ColourName, Rgb][]> = {
-  highlight: LIGHT,
-  underline: DARK,
-  ink: DARK,
-  text: DARK,
-};
-
-export const sameRgb = (a: Rgb, b: Rgb) => a.every((v, i) => Math.abs(v - b[i]) < 0.002);
+export const PEN_WIDTH = { min: 0.5, max: 20 };
+export const ERASER_SIZE = { min: 4, max: 60 };
 
 /** Maps PDF space to the page's viewport at scale 1 (CSS px of an unzoomed page). */
 export interface PageSpace {
@@ -61,28 +47,31 @@ export interface PageSpace {
 
 export const css = (c: Rgb) => `rgb(${c.map((v) => Math.round(v * 255)).join(' ')})`;
 
+const alpha = (o: number | undefined) => (o !== undefined && o < 1 ? ` opacity="${+o.toFixed(3)}"` : '');
+
 /** SVG markup for one edit, in viewport coordinates. */
 export function editSvg(edit: Edit, space: PageSpace): string {
   const pt = (x: number, y: number) => space.toView(x, y).map((v) => v.toFixed(2)).join(',');
   switch (edit.kind) {
     case 'highlight':
-      return edit.quads.map((q) =>
-        `<polygon points="${pt(q[0], q[1])} ${pt(q[2], q[3])} ${pt(q[6], q[7])} ${pt(q[4], q[5])}" fill="${css(edit.colour)}"/>`).join('');
+      return `<g${alpha(edit.opacity)}>${edit.quads.map((q) =>
+        `<polygon points="${pt(q[0], q[1])} ${pt(q[2], q[3])} ${pt(q[6], q[7])} ${pt(q[4], q[5])}" fill="${css(edit.colour)}"/>`).join('')}</g>`;
     case 'underline':
-      return edit.quads.map((q) => {
+      return `<g${alpha(edit.opacity)}>${edit.quads.map((q) => {
         const t = 1.5 / 14;
         const a = pt(q[4] + (q[0] - q[4]) * t, q[5] + (q[1] - q[5]) * t);
         const b = pt(q[6] + (q[2] - q[6]) * t, q[7] + (q[3] - q[7]) * t);
         const h = Math.hypot(q[0] - q[4], q[1] - q[5]);
         return `<polyline points="${a} ${b}" stroke="${css(edit.colour)}" stroke-width="${Math.max(0.5, h / 14)}" fill="none"/>`;
-      }).join('');
+      }).join('')}</g>`;
     case 'ink':
-      return edit.paths.map((p) => {
+      // One group, so where a stroke crosses itself a see-through pen doesn't darken (as saved).
+      return `<g${alpha(edit.opacity)}>${edit.paths.map((p) => {
         const pts: string[] = [];
         for (let i = 0; i < p.length; i += 2) pts.push(pt(p[i], p[i + 1]));
         if (pts.length === 1) pts.push(pts[0]);
         return `<polyline points="${pts.join(' ')}" stroke="${css(edit.colour)}" stroke-width="${edit.width}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
-      }).join('');
+      }).join('')}</g>`;
     case 'text': {
       const [x, y] = space.toView(edit.x, edit.y);
       const lines = edit.text.split('\n');

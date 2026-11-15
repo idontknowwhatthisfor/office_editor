@@ -36,10 +36,10 @@ export async function writeEdits(
     switch (edit.kind) {
       case 'highlight':
       case 'underline':
-        markup(doc, page, edit.kind, edit.quads, edit.colour);
+        markup(doc, page, edit.kind, edit.quads, edit.colour, edit.opacity ?? 1);
         break;
       case 'ink':
-        ink(doc, page, edit.paths, edit.colour, edit.width);
+        ink(doc, page, edit.paths, edit.colour, edit.width, edit.opacity ?? 1);
         break;
       case 'text':
         freeText(doc, page, edit, await font());
@@ -86,11 +86,12 @@ function bounds(points: number[], pad: number): number[] {
 }
 
 /** An appearance stream (form XObject) in page space, clipped to `rect`. */
-function appearance(doc: PDFDocument, rect: number[], ops: string, resources?: Record<string, unknown>): PDFRef {
+function appearance(doc: PDFDocument, rect: number[], ops: string, resources?: Record<string, unknown>, group = false): PDFRef {
   const stream = doc.context.stream(ops, {
     Type: 'XObject',
     Subtype: 'Form',
     BBox: rect,
+    ...(group ? { Group: { S: 'Transparency' } } : {}),
     // pdf-lib turns nested plain objects into PDF dictionaries.
     Resources: (resources ?? {}) as never,
   });
@@ -110,19 +111,31 @@ function addAnnot(doc: PDFDocument, page: PDFPage, dict: Record<string, unknown>
 
 const rgb = (c: Rgb) => c.map((v) => +v.toFixed(3)).join(' ');
 
+/**
+ * The appearance of a mark that is multiplied onto the page (a highlight) and/or see-through:
+ * the mark is drawn opaque in an inner group, which is then painted with the blend mode and
+ * opacity, so where its parts overlap they don't add up.
+ */
+function blended(doc: PDFDocument, rect: number[], ops: string, opacity: number, multiply: boolean): PDFRef {
+  if (!multiply && opacity >= 1) return appearance(doc, rect, ops);
+  const o = +opacity.toFixed(3);
+  const inner = appearance(doc, rect, ops, undefined, true);
+  return appearance(doc, rect, '/GS0 gs /Fm0 Do', {
+    ExtGState: { GS0: doc.context.obj({ ...(multiply ? { BM: 'Multiply' } : {}), CA: o, ca: o }) },
+    XObject: { Fm0: inner },
+  });
+}
+
 /** Highlight / underline over text. Each quad: x1 y1 x2 y2 x3 y3 x4 y4 (TL, TR, BL, BR). */
-function markup(doc: PDFDocument, page: PDFPage, kind: 'highlight' | 'underline', quads: number[][], colour: Rgb): void {
+function markup(doc: PDFDocument, page: PDFPage, kind: 'highlight' | 'underline', quads: number[][], colour: Rgb, opacity: number): void {
   const flat = quads.flat();
   const rect = bounds(flat, 1);
   let ops = '';
-  let resources: Record<string, unknown> | undefined;
   if (kind === 'highlight') {
-    // Multiply, so the text under the colour stays readable.
-    resources = { ExtGState: { GS0: doc.context.obj({ BM: 'Multiply', CA: 1, ca: 1 }) } };
-    ops = `/GS0 gs ${rgb(colour)} rg `;
+    ops += `${rgb(colour)} rg `;
     for (const q of quads) ops += `${q[4]} ${q[5]} m ${q[6]} ${q[7]} l ${q[2]} ${q[3]} l ${q[0]} ${q[1]} l h f `;
   } else {
-    ops = `${rgb(colour)} RG `;
+    ops += `${rgb(colour)} RG `;
     for (const q of quads) {
       const h = Math.hypot(q[0] - q[4], q[1] - q[5]);
       const w = Math.max(0.5, h / 14);
@@ -140,11 +153,12 @@ function markup(doc: PDFDocument, page: PDFPage, kind: 'highlight' | 'underline'
     Rect: arr(doc, rect),
     QuadPoints: arr(doc, flat),
     C: arr(doc, colour),
-    AP: doc.context.obj({ N: appearance(doc, rect, ops, resources) }),
+    // Multiply a highlight, so the text under the colour stays readable.
+    AP: doc.context.obj({ N: blended(doc, rect, ops, opacity, kind === 'highlight') }),
   });
 }
 
-function ink(doc: PDFDocument, page: PDFPage, paths: number[][], colour: Rgb, width: number): void {
+function ink(doc: PDFDocument, page: PDFPage, paths: number[][], colour: Rgb, width: number, opacity: number): void {
   const rect = bounds(paths.flat(), width);
   let ops = `${rgb(colour)} RG ${width} w 1 J 1 j `;
   for (const p of paths) {
@@ -160,7 +174,7 @@ function ink(doc: PDFDocument, page: PDFPage, paths: number[][], colour: Rgb, wi
     InkList: doc.context.obj(paths.map((p) => p.map(num))),
     C: arr(doc, colour),
     BS: doc.context.obj({ W: width, S: 'S' }),
-    AP: doc.context.obj({ N: appearance(doc, rect, ops) }),
+    AP: doc.context.obj({ N: blended(doc, rect, ops, opacity, false) }),
   });
 }
 

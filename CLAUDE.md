@@ -32,11 +32,19 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     (tools, form inputs over the page, undo), `edits.ts` (the edit model, in PDF space),
     `write.ts` (pdf-lib: highlights, underlines, ink and text become real annotations with
     their own appearance streams; signatures are drawn into the page; form values get fresh
-    appearances; page rotation/deletion). Each tool's colour is picked from `PALETTES`
-    (`edits.ts`, kept in localStorage). `erase.ts`: the eraser button cycles whole-mark (a
-    stroke, text box or signature; one line of a highlight) → partial (cuts pen strokes) → off;
-    a swipe is one `erase` op mapping each touched edit to what it became, so undo is one step.
-    Only marks made since opening can be erased.
+    appearances; page rotation/deletion). `style.ts` is a tool's settings panel, opened by holding
+    that tool's button (`holdable` in `editor.ts`; a tap still uses or toggles the tool). It shows
+    only that tool's options (the `Style` in `edits.ts`, kept in localStorage): colour from a grid or HSV
+    sliders or the eyedropper (reads the page canvas), opacity for highlight/underline/pen, pen
+    thickness, and the eraser's mode (pixel = cuts pen strokes, stroke = whole marks, one line
+    of a highlight) and size. See-through marks are saved as an inner transparency group painted
+    with `ca`/`CA` (no annotation `/CA`, which some readers would apply on top). `erase.ts`: a
+    swipe is one `erase` op mapping each touched edit to what it became, so undo is one step.
+    Only marks made since opening can be erased. The editor's panels, toast and dialogs live in
+    `overlay.ts`'s layer, counter-scaled to the visible area like the bottom bar, so pinch-zoom
+    doesn't magnify them. While a tool is on, the edit layer has `touch-action: pinch-zoom`: one
+    finger uses the tool, two zoom and scroll (a mark begun < 300 ms before the second finger is
+    dropped; tap tools act on lift).
   - `src/docx/` — read-only Word viewer in page layout, as Word shows it. `docx-preview` renders
     the XML to HTML; `paginate.ts` splits it into pages (docx-preview only breaks at explicit
     page breaks); `viewer.ts` corrects line spacing, fills page numbers and scales pages to the

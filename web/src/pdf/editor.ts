@@ -2,14 +2,16 @@ import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf
 import { t } from '../i18n';
 import { isDirty, registerEditor, setDirty, type SaveResult } from '../save';
 import { fontSizeField, parseFontSize } from '../ui';
-import { COLOURS, css, editSvg, PALETTES, sameRgb, type ColourTarget, type Edit, type FormValue, type PageSpace, type Rgb } from './edits';
+import { css, editSvg, type ColourTarget, type Edit, type FormValue, type PageSpace, type Rgb } from './edits';
+import { overlay } from './overlay';
 import { along, erasePart, eraseWhole, type Point } from './erase';
+import { openStylePanel, readStyle, saveStyle, type StyleTarget } from './style';
 
 // PDF editing (PRD M5): highlight and underline selected text, draw, add text, sign, rotate or
 // delete pages, and fill in forms. Edits stay in memory, drawn over the pages, until the user
 // saves; write.ts then puts them into the file.
 
-type Tool = 'none' | 'ink' | 'text' | 'place-signature' | 'erase-whole' | 'erase-part';
+type Tool = 'none' | 'ink' | 'text' | 'place-signature' | 'erase' | 'pick-colour';
 
 interface PageState {
   el: HTMLElement;
@@ -36,12 +38,13 @@ export interface EditorHost {
 }
 
 const SIGNATURE_KEY = 'officeeditor.signature';
-const COLOURS_KEY = 'officeeditor.pdfColours';
 /** Larger files are not edited: saving rewrites the whole file in memory. */
 const MAX_EDIT_BYTES = 150 * 1024 * 1024;
 const SIGNATURE_WIDTH = 150;
-/** The eraser's radius on screen, in CSS px, whatever the zoom. */
-const ERASER_RADIUS = 12;
+/** A mark begun less than this before a second finger lands is the start of a pinch. */
+const PINCH_GRACE_MS = 300;
+/** How far (CSS px) a finger may move and still be a tap. */
+const TAP_SLOP = 12;
 
 export class PdfEditor {
   readonly row = el('div', 'pagebar-row pdf-edit-row');
@@ -52,10 +55,19 @@ export class PdfEditor {
   private formInputs = new Map<string, HTMLElement[]>();
   private tool: Tool = 'none';
   private toolButtons = new Map<Tool, HTMLButtonElement>();
-  /** The colour each tool uses for new marks; kept on the device for next time. */
-  private colours = readColours();
-  private colourButton: HTMLButtonElement;
+  /** How new marks look (colours, opacity, pen thickness, eraser); kept on the device. */
+  private style = readStyle();
   private eraserButton: HTMLButtonElement;
+  private markButtons = new Map<'highlight' | 'underline', HTMLButtonElement>();
+  /** The open settings panel: whose it is, and how to close it. */
+  private panel: { target: StyleTarget; close: () => void } | null = null;
+  /** While the eyedropper waits for a tap: whose colour it sets, and the tool to go back to. */
+  private picking: { target: ColourTarget; tool: Tool } | null = null;
+  /** Fingers on the pages while a tool is on; with two or more, the tools stand aside. */
+  private fingers = new Set<number>();
+  private twoFingers = false;
+  /** The stroke or eraser swipe in progress, so a second finger (on any page) can end it. */
+  private gesture: { page: number; started: number; end: (keep: boolean) => void } | null = null;
   private signature: { png: Uint8Array; url: string; ratio: number } | null = null;
   private undoButton: HTMLButtonElement;
   private redoButton: HTMLButtonElement;
@@ -64,22 +76,36 @@ export class PdfEditor {
   active = false;
 
   constructor(private host: EditorHost, private hasForms: boolean, onDone: () => void) {
+    /** A button that first closes a tool's settings panel, if one is open. */
     const button = (icon: string, label: string, action: () => void) => {
       const b = iconButton(icon, label);
-      b.onclick = action;
+      b.onclick = () => {
+        this.panel?.close();
+        action();
+      };
       this.row.append(b);
       return b;
     };
-    button(ICON_HIGHLIGHT, t('highlight'), () => this.markSelection('highlight'));
-    button(ICON_UNDERLINE, t('underline'), () => this.markSelection('underline'));
-    this.toolButtons.set('ink', button(ICON_PEN, t('pen'), () => this.setTool(this.tool === 'ink' ? 'none' : 'ink')));
-    this.toolButtons.set('text', button(ICON_TEXT, t('addText'), () => this.setTool(this.tool === 'text' ? 'none' : 'text')));
-    // One button for both erasers: whole marks, then partial, then off.
-    this.eraserButton = button('', t('eraser'), () =>
-      this.setTool(this.tool === 'erase-whole' ? 'erase-part' : this.tool === 'erase-part' ? 'none' : 'erase-whole'));
+    // A tap uses the tool (or turns it on and off); holding the button opens that tool's own
+    // settings: colour, opacity, thickness, eraser mode and size.
+    const markButton = (kind: 'highlight' | 'underline', icon: string) => {
+      const b = iconButton(icon, t(kind));
+      holdable(b, () => this.markTap(kind), () => this.hold(kind));
+      this.row.append(b);
+      this.markButtons.set(kind, b);
+    };
+    markButton('highlight', ICON_HIGHLIGHT);
+    markButton('underline', ICON_UNDERLINE);
+    const toolButton = (tool: 'ink' | 'text' | 'erase', icon: string, label: string) => {
+      const b = iconButton(icon, label);
+      holdable(b, () => this.toolTap(tool), () => this.hold(tool === 'erase' ? 'eraser' : tool));
+      this.row.append(b);
+      return b;
+    };
+    this.toolButtons.set('ink', toolButton('ink', ICON_PEN, t('pen')));
+    this.toolButtons.set('text', toolButton('text', ICON_TEXT, t('addText')));
+    this.eraserButton = toolButton('erase', '', t('eraser'));
     this.drawEraserButton();
-    this.colourButton = button('', t('colours'), () => void this.chooseColours());
-    this.drawColourButton();
     this.toolButtons.set('place-signature', button(ICON_SIGN, t('sign'), () => void this.chooseSignature()));
     button(ICON_PAGE, t('pageTools'), () => this.pageMenu());
     this.undoButton = button(ICON_UNDO, t('undo'), () => this.undo());
@@ -90,7 +116,14 @@ export class PdfEditor {
       onDone();
     });
     this.row.hidden = true;
-    document.body.append(this.toast);
+    // A finger may lift away from the page it touched (only the first one is captured).
+    for (const type of ['pointerup', 'pointercancel'] as const) {
+      window.addEventListener(type, (e) => {
+        this.fingers.delete(e.pointerId);
+        if (this.fingers.size === 0) this.twoFingers = false;
+      }, true);
+    }
+    overlay().append(this.toast);
     this.updateButtons();
 
     registerEditor({
@@ -219,17 +252,43 @@ export class PdfEditor {
 
   // ---------------------------------------------------------------- tools
 
-  private setTool(tool: Tool): void {
+  private setTool(tool: Tool, hint = true): void {
+    if (this.tool === 'pick-colour' && tool !== 'pick-colour') this.picking = null;
     this.tool = tool;
     for (const [name, b] of this.toolButtons) b.classList.toggle('active', name === tool);
     this.drawEraserButton();
     // Drawing and placing take single-finger touches on the page instead of scrolling.
     document.body.classList.toggle('pdf-drawing', tool !== 'none');
+    if (!hint) return;
     if (tool === 'ink') this.say(t('penHint'));
     else if (tool === 'text') this.say(t('textHint'));
     else if (tool === 'place-signature') this.say(t('placeHint'));
-    else if (tool === 'erase-whole') this.say(t('eraseWholeHint'));
-    else if (tool === 'erase-part') this.say(t('erasePartHint'));
+    else if (tool === 'erase') this.say(this.style.eraser.mode === 'part' ? t('erasePartHint') : t('eraseWholeHint'));
+    else if (tool === 'pick-colour') this.say(t('pickHint'));
+  }
+
+  /** Highlight / Underline: marks the selected text. */
+  private markTap(kind: 'highlight' | 'underline'): void {
+    this.panel?.close();
+    this.markSelection(kind);
+  }
+
+  /** Draw / Add text / eraser: on, or off when on. */
+  private toolTap(tool: 'ink' | 'text' | 'erase'): void {
+    this.panel?.close();
+    this.setTool(this.tool === tool ? 'none' : tool);
+  }
+
+  /** A held tool button: that tool's settings; a drawing tool is turned on, ready to use them. */
+  private hold(target: StyleTarget): void {
+    this.panel?.close();
+    const tool: Partial<Record<StyleTarget, Tool>> = { ink: 'ink', text: 'text', eraser: 'erase' };
+    const on = tool[target];
+    if (on && this.tool !== on) {
+      // Without the hint toast, which the panel would cover.
+      this.setTool(on, false);
+    }
+    this.showStyle(target);
   }
 
   private markSelection(kind: 'highlight' | 'underline'): void {
@@ -261,14 +320,14 @@ export class PdfEditor {
       this.say(t('selectTextFirst'));
       return;
     }
-    for (const [page, quads] of byPage) this.push({ kind: 'edit', edit: { kind, page, quads, colour: this.colours[kind] } });
+    for (const [page, quads] of byPage) this.push({ kind: 'edit', edit: { kind, page, quads, colour: this.style[kind].colour, opacity: this.style[kind].opacity } });
     selection.removeAllRanges();
   }
 
   private drawEraserButton(): void {
-    const part = this.tool === 'erase-part';
+    const part = this.style.eraser.mode === 'part';
     const b = this.eraserButton;
-    b.classList.toggle('active', part || this.tool === 'erase-whole');
+    b.classList.toggle('active', this.tool === 'erase');
     const label = part ? t('eraserPart') : t('eraser');
     b.setAttribute('aria-label', label);
     b.title = label;
@@ -282,38 +341,68 @@ export class PdfEditor {
     let erasing: ReturnType<PdfEditor['startErasing']> | null = null;
     let path: number[] | null = null;
     let live: SVGPolylineElement | null = null;
+    /** A tap tool (text, signature, eyedropper) acts when the finger lifts, if it was a tap. */
+    let tap: { id: number; x: number; y: number; vx: number; vy: number } | null = null;
     const local = (e: PointerEvent): [number, number] => {
       const box = state.overlay.getBoundingClientRect();
       return [((e.clientX - box.left) / box.width) * state.space.width, ((e.clientY - box.top) / box.height) * state.space.height];
     };
+    /** Ends this page's stroke or eraser swipe: kept, or (keep = false) dropped as if never made. */
+    const end = (keep: boolean) => {
+      tap = null;
+      if (erasing) {
+        if (keep) erasing.end();
+        else erasing.cancel();
+        erasing = null;
+      }
+      if (path) {
+        const done = path;
+        path = null;
+        live = null;
+        if (keep) {
+          this.push({ kind: 'edit', edit: { kind: 'ink', page: index, paths: [done], colour: this.style.ink.colour, width: this.style.ink.width, opacity: this.style.ink.opacity } });
+        } else this.drawPage(index);
+      }
+      if (this.gesture?.page === index) this.gesture = null;
+    };
     state.overlay.addEventListener('pointerdown', (e) => {
       if (this.tool === 'none') return;
-      e.preventDefault();
-      const [vx, vy] = local(e);
-      if (this.tool === 'text') {
-        void this.addText(index, state, vx, vy);
+      this.fingers.add(e.pointerId);
+      if (this.fingers.size > 1) {
+        // A second finger: zooming or scrolling the page, not using the tool. A mark the first
+        // finger only just began is the start of that pinch; an older one is kept as drawn.
+        const g = this.gesture;
+        if (g) g.end(performance.now() - g.started > PINCH_GRACE_MS);
+        this.twoFingers = true;
         return;
       }
-      if (this.tool === 'place-signature') {
-        this.placeSignature(index, state, vx, vy);
+      if (this.twoFingers) return;
+      e.preventDefault();
+      const [vx, vy] = local(e);
+      if (this.tool === 'text' || this.tool === 'place-signature' || this.tool === 'pick-colour') {
+        tap = { id: e.pointerId, x: e.clientX, y: e.clientY, vx, vy };
         return;
       }
       capture(state.overlay, e.pointerId);
-      if (this.tool === 'erase-whole' || this.tool === 'erase-part') {
-        erasing = this.startErasing(index, state, this.tool === 'erase-part');
+      this.gesture = { page: index, started: performance.now(), end };
+      if (this.tool === 'erase') {
+        erasing = this.startErasing(index, state, this.style.eraser.mode === 'part');
         erasing.move(vx, vy);
         return;
       }
       path = [...state.space.toPdf(vx, vy)];
       live = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
       live.setAttribute('fill', 'none');
-      live.setAttribute('stroke', css(this.colours.ink));
-      live.setAttribute('stroke-width', '2');
+      live.setAttribute('stroke', css(this.style.ink.colour));
+      live.setAttribute('stroke-width', String(this.style.ink.width));
+      live.setAttribute('stroke-linejoin', 'round');
+      if (this.style.ink.opacity < 1) live.setAttribute('opacity', String(this.style.ink.opacity));
       live.setAttribute('stroke-linecap', 'round');
       live.setAttribute('points', `${vx},${vy}`);
       state.overlay.append(live);
     });
     state.overlay.addEventListener('pointermove', (e) => {
+      if (this.twoFingers) return;
       if (erasing) {
         const coalesced = e.getCoalescedEvents?.() ?? [];
         for (const ev of coalesced.length ? coalesced : [e]) erasing.move(...local(ev));
@@ -327,20 +416,22 @@ export class PdfEditor {
         live.setAttribute('points', `${live.getAttribute('points')} ${vx},${vy}`);
       }
     });
-    const finish = () => {
-      if (erasing) {
-        erasing.end();
-        erasing = null;
+    const lifted = (e: PointerEvent, cancelled: boolean) => {
+      this.fingers.delete(e.pointerId);
+      if (this.fingers.size === 0) this.twoFingers = false;
+      const t = tap;
+      if (t && t.id === e.pointerId && !cancelled && Math.hypot(e.clientX - t.x, e.clientY - t.y) < TAP_SLOP) {
+        tap = null;
+        if (this.tool === 'text') void this.addText(index, state, t.vx, t.vy);
+        else if (this.tool === 'place-signature') this.placeSignature(index, state, t.vx, t.vy);
+        else if (this.tool === 'pick-colour') this.pickColour(state, e);
         return;
       }
-      if (!path) return;
-      const done = path;
-      path = null;
-      live = null;
-      this.push({ kind: 'edit', edit: { kind: 'ink', page: index, paths: [done], colour: this.colours.ink, width: 2 } });
+      // The browser cancels the pointer when it takes over (a pinch): drop what it was drawing.
+      end(!cancelled);
     };
-    state.overlay.addEventListener('pointerup', finish);
-    state.overlay.addEventListener('pointercancel', finish);
+    state.overlay.addEventListener('pointerup', (e) => lifted(e, false));
+    state.overlay.addEventListener('pointercancel', (e) => lifted(e, true));
   }
 
   /**
@@ -354,7 +445,7 @@ export class PdfEditor {
     const origin = new Map<Edit, Edit>();
     let last: Point | null = null;
     // Radius in page units, so it is the same size on screen at any zoom.
-    const r = ERASER_RADIUS * (state.space.width / Math.max(1, state.overlay.getBoundingClientRect().width));
+    const r = this.style.eraser.size * (state.space.width / Math.max(1, state.overlay.getBoundingClientRect().width));
     const current = () => base.flatMap((e) => changes.get(e) ?? [e]);
     const cursor = (vx: number, vy: number) =>
       `<circle cx="${vx.toFixed(2)}" cy="${vy.toFixed(2)}" r="${r.toFixed(2)}" fill="rgb(128 128 128 / 0.15)" stroke="rgb(90 90 90)" stroke-width="${(r / 12).toFixed(2)}"/>`;
@@ -379,6 +470,8 @@ export class PdfEditor {
         if (changes.size) this.push({ kind: 'erase', page: index, changes });
         else this.drawPage(index);
       },
+      /** Drops the swipe: nothing it touched is erased. */
+      cancel: () => this.drawPage(index),
     };
   }
 
@@ -386,28 +479,55 @@ export class PdfEditor {
     const result = await textDialog();
     if (!result) return;
     const [x, y] = state.space.toPdf(vx, vy);
-    this.push({ kind: 'edit', edit: { kind: 'text', page: index, x, y, text: result.text, size: result.size, colour: this.colours.text } });
+    this.push({ kind: 'edit', edit: { kind: 'text', page: index, x, y, text: result.text, size: result.size, colour: this.style.text.colour } });
     this.setTool('none');
   }
 
-  private async chooseColours(): Promise<void> {
-    await colourDialog(this.colours, () => {
-      this.drawColourButton();
-      try {
-        localStorage.setItem(COLOURS_KEY, JSON.stringify(this.colours));
-      } catch {
-        // Not kept for next time; still used now.
-      }
+  private showStyle(target: StyleTarget): void {
+    this.markButtons.forEach((b, kind) => b.classList.toggle('active', kind === target));
+    const close = openStylePanel({
+      style: this.style,
+      target,
+      changed: () => {
+        saveStyle(this.style);
+        this.drawEraserButton();
+      },
+      pick: (colourTarget) => {
+        this.picking = { target: colourTarget, tool: this.tool };
+        this.setTool('pick-colour');
+      },
+      closed: () => {
+        this.panel = null;
+        this.markButtons.forEach((b) => b.classList.remove('active'));
+      },
     });
+    this.panel = { target, close };
   }
 
-  /** The button shows the four colours in use: highlight, underline / pen, text. */
-  private drawColourButton(): void {
-    const c = this.colours;
-    const dot = (x: number, y: number, rgb: Rgb) =>
-      `<circle cx="${x}" cy="${y}" r="4.6" fill="${css(rgb)}" stroke="currentColor" stroke-opacity="0.45" stroke-width="1"/>`;
-    this.colourButton.innerHTML = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">${
-      dot(7, 7, c.highlight)}${dot(17, 7, c.underline)}${dot(7, 17, c.ink)}${dot(17, 17, c.text)}</svg>`;
+  /** The eyedropper's tap: the colour of the page under the finger, then back to the settings. */
+  private pickColour(state: PageState, e: PointerEvent): void {
+    const picking = this.picking;
+    const canvas = state.el.querySelector('canvas');
+    let colour: Rgb | null = null;
+    if (canvas) {
+      const box = canvas.getBoundingClientRect();
+      const x = Math.floor(((e.clientX - box.left) / box.width) * canvas.width);
+      const y = Math.floor(((e.clientY - box.top) / box.height) * canvas.height);
+      try {
+        const d = canvas.getContext('2d')?.getImageData(x, y, 1, 1).data;
+        // Transparent canvas pixels are white paper.
+        if (d) colour = d[3] ? [d[0] / 255, d[1] / 255, d[2] / 255] : [1, 1, 1];
+      } catch {
+        // Unreadable canvas: nothing picked.
+      }
+    }
+    this.setTool(picking?.tool ?? 'none');
+    if (!picking) return;
+    if (colour) {
+      this.style[picking.target].colour = colour.map((v) => Math.round(v * 255) / 255) as Rgb;
+      saveStyle(this.style);
+    }
+    this.showStyle(picking.target);
   }
 
   private async chooseSignature(): Promise<void> {
@@ -647,22 +767,6 @@ function capture(el: Element, pointerId: number): void {
   }
 }
 
-function readColours(): Record<ColourTarget, Rgb> {
-  const colours = { ...COLOURS };
-  try {
-    const stored = JSON.parse(localStorage.getItem(COLOURS_KEY) ?? '{}') as Partial<Record<ColourTarget, Rgb>>;
-    for (const key of Object.keys(colours) as ColourTarget[]) {
-      const c = stored[key];
-      // Only colours the palette offers (a stored value from an older version may not be).
-      const known = c && PALETTES[key].find(([, rgb]) => sameRgb(rgb, c));
-      if (known) colours[key] = known[1];
-    }
-  } catch {
-    // Defaults.
-  }
-  return colours;
-}
-
 function readStored(): string | null {
   try {
     return localStorage.getItem(SIGNATURE_KEY);
@@ -682,7 +786,7 @@ function dialog(title: string): { box: HTMLElement; close: () => void; actions: 
   const actions = el('div', 'pdf-dialog-actions');
   box.append(h, actions);
   scrim.append(box);
-  document.body.append(scrim);
+  overlay().append(scrim);
   return { box, actions, close: () => scrim.remove() };
 }
 
@@ -733,55 +837,6 @@ function textDialog(): Promise<{ text: string; size: number } | null> {
       }, true),
     );
     area.focus();
-  });
-}
-
-const COLOUR_ROWS: [ColourTarget, Parameters<typeof t>[0]][] = [
-  ['highlight', 'highlight'],
-  ['underline', 'underline'],
-  ['ink', 'pen'],
-  ['text', 'colourText'],
-];
-
-/** One row of swatches per tool; a tap changes that tool's colour at once (`changed` is told). */
-function colourDialog(colours: Record<ColourTarget, Rgb>, changed: () => void): Promise<void> {
-  return new Promise((resolve) => {
-    const d = dialog(t('colours'));
-    for (const [target, label] of COLOUR_ROWS) {
-      const row = el('div', 'pdf-colour-row');
-      row.setAttribute('role', 'radiogroup');
-      const caption = el('span', 'pdf-colour-caption');
-      caption.textContent = t(label);
-      caption.id = `pdf-colour-${target}`;
-      row.setAttribute('aria-labelledby', caption.id);
-      const swatches = el('div', 'pdf-swatches');
-      const buttons: HTMLButtonElement[] = [];
-      for (const [name, rgb] of PALETTES[target]) {
-        const b = el('button', 'pdf-swatch');
-        b.setAttribute('role', 'radio');
-        b.setAttribute('aria-label', t(`colour_${name}`));
-        b.title = t(`colour_${name}`);
-        b.style.setProperty('--swatch', css(rgb));
-        const mark = () => {
-          for (const other of buttons) other.setAttribute('aria-checked', String(other === b));
-        };
-        b.onclick = () => {
-          colours[target] = rgb;
-          mark();
-          changed();
-        };
-        buttons.push(b);
-        if (sameRgb(rgb, colours[target])) b.setAttribute('aria-checked', 'true');
-        else b.setAttribute('aria-checked', 'false');
-        swatches.append(b);
-      }
-      row.append(caption, swatches);
-      d.box.insertBefore(row, d.actions);
-    }
-    const hint = el('p', 'pdf-dialog-hint');
-    hint.textContent = t('coloursHint');
-    d.box.insertBefore(hint, d.actions);
-    d.actions.append(textButton(t('done'), () => { d.close(); resolve(); }, true));
   });
 }
 
@@ -898,6 +953,41 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string): H
   const node = document.createElement(tag);
   if (className) node.className = className;
   return node;
+}
+
+/** How long a press must last to count as holding. */
+const HOLD_MS = 450;
+
+/**
+ * A button with a tap and a hold action. Holding (or a right click / the long-press context
+ * menu) runs `onHold`, and the click that follows it is ignored.
+ */
+function holdable(b: HTMLButtonElement, onTap: () => void, onHold: () => void): void {
+  let timer = 0;
+  let held = false;
+  const hold = () => {
+    clearTimeout(timer);
+    if (held) return;
+    held = true;
+    navigator.vibrate?.(10);
+    onHold();
+  };
+  b.addEventListener('pointerdown', () => {
+    held = false;
+    clearTimeout(timer);
+    timer = window.setTimeout(hold, HOLD_MS);
+  });
+  for (const end of ['pointerup', 'pointerleave', 'pointercancel'] as const) {
+    b.addEventListener(end, () => clearTimeout(timer));
+  }
+  b.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    hold();
+  });
+  b.addEventListener('click', () => {
+    if (held) held = false;
+    else onTap();
+  });
 }
 
 function iconButton(path: string, label: string): HTMLButtonElement {
