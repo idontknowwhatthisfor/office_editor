@@ -1,3 +1,4 @@
+import './style.css';
 import { t } from '../i18n';
 import { overlay } from './overlay';
 import { css, DEFAULT_STYLE, ERASER_SIZE, PEN_WIDTH, type ColourTarget, type Rgb, type Style } from './edits';
@@ -8,6 +9,7 @@ import { css, DEFAULT_STYLE, ERASER_SIZE, PEN_WIDTH, type ColourTarget, type Rgb
 // underline and text: a colour, from a grid of swatches or from hue / saturation / brightness
 // sliders, or picked from the page. Eraser: pixel (partial) or stroke (whole marks), and its size.
 // Every change applies at once and is kept on the device.
+// The Word editor opens the same panel for its underline and text buttons (`plain`: colour only).
 
 export type StyleTarget = ColourTarget | 'eraser';
 
@@ -15,14 +17,14 @@ const STYLE_KEY = 'officeeditor.pdfStyle';
 /** Colours only, from version 1.2.2; read once if there is no newer style. */
 const OLD_COLOURS_KEY = 'officeeditor.pdfColours';
 
-export function readStyle(): Style {
+export function readStyle(key = STYLE_KEY): Style {
   const style = structuredClone(DEFAULT_STYLE);
   try {
-    const raw = localStorage.getItem(STYLE_KEY);
+    const raw = localStorage.getItem(key);
     if (raw) {
       const s = JSON.parse(raw) as Partial<Style>;
       for (const key of Object.keys(style) as (keyof Style)[]) Object.assign(style[key], valid(s[key]));
-    } else {
+    } else if (key === STYLE_KEY) {
       const old = JSON.parse(localStorage.getItem(OLD_COLOURS_KEY) ?? '{}') as Record<string, unknown>;
       for (const key of ['highlight', 'underline', 'ink', 'text'] as const) {
         if (isRgb(old[key])) style[key].colour = old[key];
@@ -34,9 +36,9 @@ export function readStyle(): Style {
   return style;
 }
 
-export function saveStyle(style: Style): void {
+export function saveStyle(style: Style, key = STYLE_KEY): void {
   try {
-    localStorage.setItem(STYLE_KEY, JSON.stringify(style));
+    localStorage.setItem(key, JSON.stringify(style));
   } catch {
     // Not kept for next time; still used now.
   }
@@ -104,8 +106,14 @@ export interface PanelOptions {
   target: StyleTarget;
   /** Called after every change (the style object has been changed in place). */
   changed: () => void;
-  /** The eyedropper: the panel has closed; the editor lets the user tap the page. */
-  pick: (target: ColourTarget) => void;
+  /** The eyedropper: the panel has closed; the editor lets the user tap the page. None: no eyedropper. */
+  pick?: (target: ColourTarget) => void;
+  /** Colour only: no opacity and no PDF hint (the Word editor). */
+  plain?: boolean;
+  /** The panel's title, if not the PDF tool's name. */
+  title?: string;
+  /** Shown first, under the title (the Word text panel's font size). */
+  extra?: HTMLElement[];
   closed: () => void;
 }
 
@@ -139,10 +147,11 @@ export function openStylePanel(o: PanelOptions): () => void {
   const labels: Record<StyleTarget, string> = {
     highlight: t('highlight'), underline: t('underline'), ink: t('pen'), text: t('addText'), eraser: t('eraser'),
   };
-  panel.setAttribute('aria-label', labels[target]);
+  const name = o.title ?? labels[target];
+  panel.setAttribute('aria-label', name);
   const title = el('div', 'pdf-style-title');
-  title.textContent = labels[target];
-  panel.append(title, ...(target === 'eraser' ? eraserSection(o) : markSection(o, target, close)));
+  title.textContent = name;
+  panel.append(title, ...(o.extra ?? []), ...(target === 'eraser' ? eraserSection(o) : markSection(o, target, close)));
   overlay().append(catcher, frame);
   return close;
 }
@@ -172,7 +181,7 @@ function markSection(o: PanelOptions, target: ColourTarget, close: () => void): 
     }));
   }
 
-  if (target !== 'text') {
+  if (target !== 'text' && !o.plain) {
     const s = style[target];
     const row = slider({
       label: t('opacity'), min: 5, max: 100, step: 1,
@@ -211,9 +220,10 @@ function markSection(o: PanelOptions, target: ColourTarget, close: () => void): 
   dropper.setAttribute('aria-label', t('pickColour'));
   dropper.title = t('pickColour');
   dropper.innerHTML = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="${ICON_DROPPER}"/></svg>`;
+  const pick = o.pick;
   dropper.onclick = () => {
     close();
-    o.pick(target);
+    pick?.(target);
   };
   const current = el('div', 'pdf-colour-current');
   const currentHex = el('span', 'pdf-colour-hex');
@@ -221,11 +231,11 @@ function markSection(o: PanelOptions, target: ColourTarget, close: () => void): 
     current.style.background = css(style[target].colour);
     currentHex.textContent = hex(style[target].colour);
   });
-  footer.append(dropper, currentHex, current);
+  footer.append(...(pick ? [dropper] : []), currentHex, current);
 
   const baseUpdates = updates.length;
   out.push(seg.el, colours, footer);
-  if (target === 'highlight' || target === 'underline') {
+  if ((target === 'highlight' || target === 'underline') && !o.plain) {
     const hint = el('p', 'pdf-dialog-hint');
     hint.textContent = t('markHint', { tool: target === 'highlight' ? t('highlight') : t('underline') });
     out.push(hint);

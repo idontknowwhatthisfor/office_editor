@@ -1,7 +1,7 @@
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { t } from '../i18n';
 import { isDirty, registerEditor, setDirty, type SaveResult } from '../save';
-import { fontSizeField, parseFontSize } from '../ui';
+import { fontSizeField, holdable, parseFontSize } from '../ui';
 import { css, editSvg, type ColourTarget, type Edit, type FormValue, type PageSpace, type Rgb } from './edits';
 import { overlay } from './overlay';
 import { along, erasePart, eraseWhole, type Point } from './erase';
@@ -992,41 +992,6 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string): H
   const node = document.createElement(tag);
   if (className) node.className = className;
   return node;
-}
-
-/** How long a press must last to count as holding. */
-const HOLD_MS = 450;
-
-/**
- * A button with a tap and a hold action. Holding (or a right click / the long-press context
- * menu) runs `onHold`, and the click that follows it is ignored.
- */
-function holdable(b: HTMLButtonElement, onTap: () => void, onHold: () => void): void {
-  let timer = 0;
-  let held = false;
-  const hold = () => {
-    clearTimeout(timer);
-    if (held) return;
-    held = true;
-    navigator.vibrate?.(10);
-    onHold();
-  };
-  b.addEventListener('pointerdown', () => {
-    held = false;
-    clearTimeout(timer);
-    timer = window.setTimeout(hold, HOLD_MS);
-  });
-  for (const end of ['pointerup', 'pointerleave', 'pointercancel'] as const) {
-    b.addEventListener(end, () => clearTimeout(timer));
-  }
-  b.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    hold();
-  });
-  b.addEventListener('click', () => {
-    if (held) held = false;
-    else onTap();
-  });
 }
 
 function iconButton(path: string, label: string): HTMLButtonElement {

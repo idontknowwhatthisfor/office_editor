@@ -134,5 +134,40 @@ export function askFontSize(current?: number): Promise<number | null> {
   });
 }
 
+/** How long a press must last to count as holding. */
+export const HOLD_MS = 450;
+
+/**
+ * A button with a tap and a hold action. Holding (or a right click / the long-press context
+ * menu) runs `onHold`, and the click that follows it is ignored.
+ */
+export function holdable(b: HTMLButtonElement, onTap: () => void, onHold: () => void): void {
+  let timer = 0;
+  let held = false;
+  const hold = () => {
+    clearTimeout(timer);
+    if (held) return;
+    held = true;
+    navigator.vibrate?.(10);
+    onHold();
+  };
+  b.addEventListener('pointerdown', () => {
+    held = false;
+    clearTimeout(timer);
+    timer = window.setTimeout(hold, HOLD_MS);
+  });
+  for (const end of ['pointerup', 'pointerleave', 'pointercancel'] as const) {
+    b.addEventListener(end, () => clearTimeout(timer));
+  }
+  b.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    hold();
+  });
+  b.addEventListener('click', () => {
+    if (held) held = false;
+    else onTap();
+  });
+}
+
 /** Material Symbols "format_size" (Apache-2.0), for a toolbar button. */
 export const ICON_FONT_SIZE = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z"/></svg>';

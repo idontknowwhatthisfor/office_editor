@@ -3,7 +3,8 @@ import { prepareCharts } from './charts';
 import JSZip from 'jszip';
 import { t } from '../i18n';
 import { registerEditor, setDirty, type SaveResult } from '../save';
-import { askFontSize, ICON_FONT_SIZE } from '../ui';
+import { fontSizeField, holdable, HOLD_MS, parseFontSize } from '../ui';
+import { openStylePanel, readStyle, saveStyle } from '../pdf/style';
 import { fontsLoaded, GUTTER, scaleLineHeights } from './viewer';
 
 // Word editing (PRD M7), done in place on the file's own XML.
@@ -71,6 +72,22 @@ function unsupported(doc: Document, zip: JSZip): string[] {
   return out;
 }
 
+/** The Word editor's own underline and text colours, kept apart from the PDF tools'. */
+const STYLE_KEY = 'officeeditor.docxStyle';
+
+/** The kept colours; until one is chosen, black (Word's automatic colour), not the PDF tools' red. */
+function wordStyle(): ReturnType<typeof readStyle> {
+  const style = readStyle(STYLE_KEY);
+  let kept = false;
+  try {
+    kept = localStorage.getItem(STYLE_KEY) !== null;
+  } catch {
+    // Not kept.
+  }
+  if (!kept) style.underline.colour = style.text.colour = [0, 0, 0];
+  return style;
+}
+
 class DocxEditor {
   private paras: Element[];
   private editable: boolean[];
@@ -86,6 +103,10 @@ class DocxEditor {
   private styles: Document | null = null;
   /** Lists started in this session; each gets its own numbering definition on save. */
   private pendingLists: ('bullet' | 'number')[] = [];
+  /** The settings panel that is open, and the button it belongs to. */
+  private panel: { button: HTMLElement; close: () => void } | null = null;
+  /** Underline and text colours from the settings panels. */
+  private style = wordStyle();
 
   constructor(
     private root: HTMLElement, private zip: JSZip, private docPath: string, private doc: Document, private fileName: string,
@@ -188,27 +209,146 @@ class DocxEditor {
   // ---------------------------------------------------------------- toolbar
 
   private buildBar(): void {
-    const add = (label: string, title: string, action: () => void, cls = '') => {
+    /**
+     * A bar button. Any button first closes an open settings panel (so only one is ever open);
+     * the button whose panel is open just closes it. `hold`: holding opens the button's settings,
+     * as in the PDF editor. `tapOnly`: a long press does nothing (no click on release).
+     */
+    const add = (label: string, title: string, action: () => void, cls = '', hold?: (b: HTMLButtonElement) => void, tapOnly = false) => {
       const b = el('button', `docx-tool ${cls}`);
       b.innerHTML = label;
       b.title = title;
       b.setAttribute('aria-label', title);
       // Keep the text selection: don't let the button take focus.
       b.addEventListener('pointerdown', (e) => e.preventDefault());
-      b.onclick = action;
+      const tap = () => {
+        const open = this.panel;
+        open?.close();
+        if (open?.button !== b) action();
+      };
+      if (hold) {
+        holdable(b, tap, () => {
+          if (this.panel?.button === b) return;
+          this.panel?.close();
+          hold(b);
+        });
+      } else if (tapOnly) {
+        let down = 0;
+        b.addEventListener('pointerdown', () => (down = Date.now()));
+        b.addEventListener('contextmenu', (e) => e.preventDefault());
+        b.addEventListener('click', () => {
+          if (Date.now() - down < HOLD_MS) tap();
+        });
+      } else {
+        b.onclick = tap;
+      }
       this.bar.append(b);
       return b;
     };
     add('<b>B</b>', t('bold'), () => this.format('bold'));
     add('<i>I</i>', t('italic'), () => this.format('italic'));
-    add('<u>U</u>', t('underlineText'), () => this.format('underline'));
-    add(ICON_FONT_SIZE, t('fontSize'), () => void this.fontSize());
+    add(ICON_UNDERLINE, t('underlineText'), () => this.format('underline'), '', (b) => this.showStyle(b, 'underline'));
+    // The text button's only action is its settings: a tap opens them (or closes them when open).
+    const text = add(ICON_TEXT, t('textSettings'), () => this.showStyle(text, 'text'), '', undefined, true);
     add(ICON_ALIGN, t('alignment'), () => this.cycleAlign());
     add('H', t('headingStyle'), () => void this.headingMenu(), 'docx-tool-h');
-    add(ICON_BULLETS, t('bullets'), () => this.setList('bullet'));
-    add(ICON_NUMBERS, t('numbering'), () => this.setList('number'));
+    add(ICON_LIST, t('listStyle'), () => this.cycleList(), '', () => void this.listMenu());
+    add(ICON_PICTURE, t('insertPicture'), () => toast(t('insertPictureSoon')));
     add(ICON_UNDO, t('undo'), () => this.undo());
     add(ICON_REDO, t('redo'), () => this.redo());
+  }
+
+  /**
+   * The settings panel of the underline or text button, as in the PDF editor. A colour chosen
+   * there is applied at once to the selected text (a text colour with only a caret: the whole
+   * paragraph; selected text is underlined in an underline colour), and the underline colour is
+   * the underline button's from then on. The text panel also has the font size, applied the same
+   * way as the text colour as soon as a valid size is typed.
+   */
+  private showStyle(button: HTMLElement, target: 'underline' | 'text'): void {
+    const p = this.current();
+    const sel = getSelection();
+    const range = p && sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    // The colour and size go on this span (made on the first change, changed after), or on p.
+    let span: HTMLElement | null = null;
+    const selected = !!(p && range && !range.collapsed && p.contains(range.commonAncestorContainer));
+    const holder = (): HTMLElement => {
+      if (!span) {
+        span = wrapRange(range!);
+        range!.selectNodeContents(span);
+      }
+      return span;
+    };
+    let extra: HTMLElement[] | undefined;
+    if (target === 'text') {
+      const at = range?.startContainer instanceof Element ? range.startContainer : range?.startContainer.parentElement ?? p;
+      const { field, input, hint } = fontSizeField(at ? (parseFloat(getComputedStyle(at).fontSize) * 72) / 96 : undefined);
+      field.classList.add('pdf-style-field');
+      const caption = el('span', 'pdf-style-caption');
+      caption.textContent = t('fontSize');
+      field.prepend(caption);
+      input.addEventListener('input', () => {
+        const pt = parseFontSize(input.value);
+        hint.classList.toggle('error', pt === null && input.value.trim() !== '');
+        if (!p || pt === null) return;
+        if (selected) setSpanSize(holder(), pt);
+        else setParagraphSize(p, pt);
+        // One undo step per pause, as for typing in the document ("20" passes through 2 pt).
+        this.changed(false);
+      });
+      // Done on the keyboard: back to the document. The key must not reach the document too,
+      // where it would replace the restored selection with a new paragraph.
+      input.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        closePanel();
+      });
+      extra = [field, hint];
+    }
+    const apply = () => {
+      if (!p) return;
+      const colour = hexOf(this.style[target].colour);
+      if (selected) {
+        paint(holder(), target, colour);
+      } else if (target === 'text') {
+        paint(p, target, colour);
+      } else {
+        // Underlining the whole paragraph for a colour would surprise: the colour is only kept
+        // for the underline button.
+        return;
+      }
+      this.changed(true);
+    };
+    button.classList.add('active');
+    // Put the keyboard (and the system's selection menu) away while the panel is open: on a phone
+    // they leave it a sliver of the screen. The selection is kept in `range` and restored on close.
+    if (p && document.activeElement instanceof HTMLElement && p.contains(document.activeElement)) {
+      document.activeElement.blur();
+      sel?.removeAllRanges();
+    }
+    const closePanel: () => void = openStylePanel({
+      style: this.style,
+      target,
+      plain: true,
+      extra,
+      title: t(target === 'underline' ? 'underlineColour' : 'textSettings'),
+      changed: () => {
+        saveStyle(this.style, STYLE_KEY);
+        apply();
+      },
+      closed: () => {
+        button.classList.remove('active');
+        if (this.panel?.button === button) this.panel = null;
+        if (!p) return;
+        // Back to the text, with the coloured part still selected.
+        p.focus();
+        if (range) {
+          sel?.removeAllRanges();
+          sel?.addRange(range);
+        }
+      },
+    });
+    this.panel = { button, close: closePanel };
   }
 
   private current(): HTMLElement | null {
@@ -218,43 +358,14 @@ class DocxEditor {
   }
 
   private format(command: 'bold' | 'italic' | 'underline'): void {
-    if (!this.current()) return toast(t('tapTextFirst'));
-    document.execCommand('styleWithCSS', false, 'false');
-    document.execCommand(command);
-    this.changed(true);
-  }
-
-  /** Font size of the selected text, or (with only a caret) of the whole paragraph. */
-  private async fontSize(): Promise<void> {
     const p = this.current();
     if (!p) return toast(t('tapTextFirst'));
-    // The dialog takes the focus: remember the selection first.
-    const sel = getSelection()!;
-    const range = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-    const at = range?.startContainer instanceof Element ? range.startContainer : range?.startContainer.parentElement ?? p;
-    const pt = await askFontSize((parseFloat(getComputedStyle(at).fontSize) * 72) / 96);
-    p.focus();
-    if (!pt) return;
-    if (range && !range.collapsed && p.contains(range.commonAncestorContainer)) {
-      const piece = range.extractContents();
-      for (const e of piece.querySelectorAll<HTMLElement>('[style]')) e.style.fontSize = '';
-      const span = el('span');
-      span.dataset.sz = String(pt);
-      span.style.fontSize = `${pt}pt`;
-      span.append(piece);
-      range.insertNode(span);
-      const again = document.createRange();
-      again.selectNodeContents(span);
-      sel.removeAllRanges();
-      sel.addRange(again);
-    } else {
-      p.dataset.sz = String(pt);
-      for (const e of p.querySelectorAll<HTMLElement>('span')) e.style.fontSize = `${pt}pt`;
-      for (const e of p.querySelectorAll<HTMLElement>('[data-sz]')) e.dataset.sz = String(pt);
-      if (range) {
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
+    document.execCommand('styleWithCSS', false, 'false');
+    document.execCommand(command);
+    // A new underline is drawn in the underline colour chosen in its settings.
+    const colour = hexOf(this.style.underline.colour);
+    if (command === 'underline' && colour !== '000000') {
+      for (const u of p.querySelectorAll<HTMLElement>('u:not([data-ucolor])')) paint(u, 'underline', colour);
     }
     this.changed(true);
   }
@@ -283,15 +394,30 @@ class DocxEditor {
     this.changed(true);
   }
 
-  private setList(kind: List): void {
+  /** The list button: none → bullets → numbering → none. */
+  private cycleList(): void {
     const p = this.current();
     if (!p) return toast(t('tapTextFirst'));
     const now = p.dataset.list ?? (p.className.includes('docx-num-') ? 'existing' : 'none');
-    const next: List = now === kind ? 'none' : kind;
+    const next: List = now === 'none' ? 'bullet' : now === 'bullet' ? 'number' : 'none';
+    this.setList(p, next);
+  }
+
+  /** Holding the list button: choose the kind. */
+  private async listMenu(): Promise<void> {
+    const p = this.current();
+    if (!p) return toast(t('tapTextFirst'));
+    const choice = (await menu(t('listStyle'), [['bullet', t('bullets')], ['number', t('numbering')], ['none', t('noList')]])) as List | null;
+    p.focus();
+    if (choice) this.setList(p, choice);
+  }
+
+  private setList(p: HTMLElement, next: List): void {
     p.dataset.list = next;
     p.classList.remove('oe-bullet', 'oe-number');
     for (const c of [...p.classList]) if (c.startsWith('docx-num-')) p.classList.remove(c);
     if (next !== 'none') p.classList.add(next === 'bullet' ? 'oe-bullet' : 'oe-number');
+    toast(t(next === 'bullet' ? 'bullets' : next === 'number' ? 'numbering' : 'noList'));
     this.changed(true);
   }
 
@@ -528,12 +654,18 @@ class DocxEditor {
     for (const b of keep) out.append(b.cloneNode(true));
 
     // The text, in pieces with the same source run and the same bold/italic/underline.
-    type Piece = { run: string | null; look: Look; text: string; kind: 'text' | 'tab' | 'br'; size?: string };
+    type Piece = { run: string | null; look: Look; text: string; kind: 'text' | 'tab' | 'br'; size?: string; color?: string; ucolor?: string };
     // A size the user chose (on a span, or for the whole paragraph), in points.
     const sizeOf = (holder: Element) => {
       const e = holder.closest<HTMLElement>('[data-sz]');
       return e && p.contains(e) && e !== p ? e.dataset.sz : p.dataset.sz;
     };
+    // Colours the user chose (hex, as Word writes them), the nearest one inside the paragraph.
+    const colourOf = (holder: Element, key: 'color' | 'ucolor') => {
+      const e = holder.closest<HTMLElement>(`[data-${key}]`);
+      return e && p.contains(e) ? e.dataset[key] : undefined;
+    };
+    const coloursOf = (holder: Element) => ({ color: colourOf(holder, 'color'), ucolor: colourOf(holder, 'ucolor') });
     const pieces: Piece[] = [];
     let lastRun: string | null = runs.length ? `${i}_0` : null;
     const walk = (node: Node) => {
@@ -545,13 +677,13 @@ class DocxEditor {
         const run = runEl && p.contains(runEl) ? runEl.dataset.r! : lastRun;
         lastRun = run;
         const tab = holder.closest<HTMLElement>('[data-tab]');
-        pieces.push({ run, look: lookOf(holder, p), text: tab ? '\t' : text.replace(/ /g, ' '), kind: tab ? 'tab' : 'text', size: sizeOf(holder) });
+        pieces.push({ run, look: lookOf(holder, p), text: tab ? '\t' : text.replace(/ /g, ' '), kind: tab ? 'tab' : 'text', size: sizeOf(holder), ...coloursOf(holder) });
         return;
       }
       if (node instanceof HTMLBRElement) {
         // The <br> an empty paragraph needs to be tappable is not a line break.
         if (node === p.lastChild || !node.nextSibling) return;
-        pieces.push({ run: lastRun, look: lookOf(node.parentElement!, p), text: '', kind: 'br', size: sizeOf(node.parentElement!) });
+        pieces.push({ run: lastRun, look: lookOf(node.parentElement!, p), text: '', kind: 'br', size: sizeOf(node.parentElement!), ...coloursOf(node.parentElement!) });
         return;
       }
       for (const c of node.childNodes) walk(c);
@@ -575,7 +707,7 @@ class DocxEditor {
 
     let current: { key: string; r: Element } | null = null;
     for (const piece of pieces) {
-      const key = `${piece.run}|${+piece.look.b}${+piece.look.i}${+piece.look.u}|${piece.size ?? ''}`;
+      const key = `${piece.run}|${+piece.look.b}${+piece.look.i}${+piece.look.u}|${piece.size ?? ''}|${piece.color ?? ''}|${piece.ucolor ?? ''}`;
       if (!current || current.key !== key) {
         const src = runById(piece.run);
         const r = doc.createElementNS(W, 'w:r');
@@ -583,6 +715,12 @@ class DocxEditor {
         if (piece.look.b !== src.look.b) setToggle(doc, rPr, 'b', piece.look.b);
         if (piece.look.i !== src.look.i) setToggle(doc, rPr, 'i', piece.look.i);
         if (piece.look.u !== src.look.u) setVal(doc, rPr, 'u', piece.look.u ? 'single' : 'none');
+        if (piece.color) setColour(doc, rPr, 'color', piece.color);
+        if (piece.ucolor && piece.look.u) {
+          // Keeps the run's own underline kind (double, dotted…) if it has one.
+          if (child(rPr, 'u')?.getAttributeNS(W, 'val') === 'none' || !child(rPr, 'u')) setVal(doc, rPr, 'u', 'single');
+          setColour(doc, rPr, 'u', piece.ucolor);
+        }
         if (piece.size) {
           // Half-points; szCs is the size of complex-script text (Arabic, Thai…).
           const half = String(Math.round(Number(piece.size) * 2));
@@ -734,6 +872,62 @@ function setVal(doc: Document, parent: Element, name: string, value: string): vo
   e.setAttributeNS(W, 'w:val', value);
 }
 
+/** A colour (hex) on w:color's val or w:u's color, replacing any theme colour there. */
+function setColour(doc: Document, rPr: Element, name: 'color' | 'u', hex: string): void {
+  let e = child(rPr, name);
+  if (!e) {
+    e = doc.createElementNS(W, `w:${name}`);
+    insertRPr(rPr, e);
+  }
+  e.setAttributeNS(W, name === 'u' ? 'w:color' : 'w:val', hex);
+  for (const a of ['themeColor', 'themeTint', 'themeShade']) e.removeAttributeNS(W, a);
+}
+
+/** A font size (points) on a span the user's selection was wrapped in; inner sizes give way. */
+function setSpanSize(span: HTMLElement, pt: number): void {
+  for (const e of span.querySelectorAll<HTMLElement>('[style]')) e.style.fontSize = '';
+  for (const e of span.querySelectorAll<HTMLElement>('[data-sz]')) delete e.dataset.sz;
+  span.dataset.sz = String(pt);
+  span.style.fontSize = `${pt}pt`;
+}
+
+/** A font size (points) for a whole paragraph, and the sizes chosen inside it. */
+function setParagraphSize(p: HTMLElement, pt: number): void {
+  p.dataset.sz = String(pt);
+  for (const e of p.querySelectorAll<HTMLElement>('span')) e.style.fontSize = `${pt}pt`;
+  for (const e of p.querySelectorAll<HTMLElement>('[data-sz]')) e.dataset.sz = String(pt);
+}
+
+/** Wraps a range of a paragraph in a new span, which it returns. */
+function wrapRange(range: Range): HTMLElement {
+  const span = el('span');
+  span.append(range.extractContents());
+  range.insertNode(span);
+  return span;
+}
+
+/**
+ * Shows a chosen text or underline colour on an element and everything in it, and marks it for
+ * saving (data-color / data-ucolor, read back in buildParagraph). Inner marks of the same kind give
+ * way; docx-preview puts the document's own colours on the inner spans.
+ */
+function paint(e: HTMLElement, target: 'text' | 'underline', hex: string): void {
+  const key = target === 'text' ? 'color' : 'ucolor';
+  const css = `#${hex}`;
+  for (const inner of e.querySelectorAll<HTMLElement>(`[data-${key}]`)) delete inner.dataset[key];
+  e.dataset[key] = hex;
+  for (const x of [e, ...e.querySelectorAll<HTMLElement>('*')]) {
+    if (target === 'text') x.style.color = css;
+    else x.style.textDecorationColor = css;
+  }
+  if (target === 'underline') e.style.textDecorationLine = 'underline';
+}
+
+/** An RGB colour (0–1) as Word writes it: RRGGBB. */
+function hexOf(c: [number, number, number]): string {
+  return c.map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
 function setToggle(doc: Document, rPr: Element, name: string, on: boolean): void {
   let e = child(rPr, name);
   if (!e) {
@@ -876,7 +1070,11 @@ function menu(title: string, items: [string, string][]): Promise<string | null> 
 // Material Symbols paths (Apache-2.0).
 const svg = (d: string) => `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="${d}"/></svg>`;
 const ICON_ALIGN = svg('M3 21h18v-2H3v2zm0-4h12v-2H3v2zm0-4h18v-2H3v2zm0-4h12V7H3v2zm0-6v2h18V3H3z');
-const ICON_BULLETS = svg('M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z');
-const ICON_NUMBERS = svg('M2 17h2v.5H3v1h1v.5H2v1h3v-4H2v1zm1-9h1V4H2v1h1v3zm-1 3h1.8L2 13.1v.9h3v-1H3.2L5 10.9V10H2v1zm5-6v2h14V5H7zm0 14h14v-2H7v2zm0-6h14v-2H7v2z');
+// Bullets and numbers in one: Material Symbols "list" (Apache-2.0).
+const ICON_LIST = svg('M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z');
+const ICON_UNDERLINE = svg('M12 17c3.31 0 6-2.69 6-6V3h-2.5v8c0 1.93-1.57 3.5-3.5 3.5S8.5 12.93 8.5 11V3H6v8c0 3.31 2.69 6 6 6zm-7 2v2h14v-2H5z');
+const ICON_TEXT = svg('M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z');
+// Material Symbols "add_photo_alternate".
+const ICON_PICTURE = svg('M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z');
 const ICON_UNDO = svg('M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z');
 const ICON_REDO = svg('M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z');

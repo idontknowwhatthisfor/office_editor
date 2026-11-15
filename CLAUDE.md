@@ -73,7 +73,14 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     paragraphs the user changed are rewritten (from their original pPr/rPr); others stay byte
     for byte. Paragraphs holding anything but plain text runs are locked. Bold/italic/underline
     are read back from computed styles; alignment, heading style and bullets/numbering are
-    paragraph properties (missing heading styles and list definitions are added).
+    paragraph properties (missing heading styles and list definitions are added). One list button
+    cycles bullets → numbering → none (hold: menu). Holding U, or tapping the text button (tap
+    only; its panel adds a font size field), opens the PDF editor's settings panel (`pdf/style.ts`
+    with `plain`, own localStorage key). One panel at a time: any bar button closes the open one
+    first, and the open panel's own button only closes it. A colour or size applies
+    at once to the selection (`data-color` / `data-ucolor` spans; a text colour with only a caret
+    colours the paragraph) and is written as `w:color` / `w:u w:color`; the panel blurs the text
+    so the keyboard goes away. The picture button is UI only so far.
   - `src/xlsx/edit.ts` + `calc.ts` — spreadsheet editing (M6). `calc.ts` is our own formula
     engine (parser, ~120 common functions, reference shifting); it matched Excel on every
     formula of both sample workbooks. `edit.ts` keeps all sheets in memory, recalculates the

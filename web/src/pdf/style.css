@@ -1,0 +1,271 @@
+/* The tool settings panel (style.ts) and the overlay layer it lives in (overlay.ts); shared by
+   the PDF and Word editors. */
+
+/* Popovers, toast and dialogs: pinned to the visible area at normal size (overlay.ts). */
+.pdf-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+:where(.pdf-overlay) > * {
+  pointer-events: auto;
+}
+
+.pdf-dialog-hint {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Closes the panel on a tap anywhere but the edit bar, whose buttons still work. */
+.pdf-style-catcher {
+  position: fixed;
+  inset: 0 0 calc(env(safe-area-inset-bottom) + 56px);
+  z-index: 39;
+}
+
+@media (max-height: 480px) {
+  .pdf-style-catcher {
+    bottom: calc(env(safe-area-inset-bottom) + 44px);
+  }
+}
+
+/* A popover above the edit bar, centred, like the bar's buttons on a wide screen. */
+.pdf-style-frame {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 8px);
+  bottom: calc(env(safe-area-inset-bottom) + 64px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  pointer-events: none;
+}
+
+.pdf-style-panel {
+  box-sizing: border-box;
+  width: min(calc(100% - 16px), 360px);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 12px 16px 14px;
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.28);
+  font-size: 14px;
+  pointer-events: auto;
+  /* Opened by holding a button: the rest of that press must not select the panel's text. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.pdf-style-panel input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* A typed setting on one line (the Word text panel's font size): its name, then the field. */
+.pdf-style-field {
+  margin: 4px 0 8px;
+  font-size: 14px;
+}
+
+.pdf-style-field > .pdf-style-caption {
+  flex: 1;
+  color: var(--text-muted);
+}
+
+.pdf-style-field + .ui-hint {
+  margin: -4px 0 8px;
+}
+
+@media (max-height: 480px) {
+  .pdf-style-frame {
+    bottom: calc(env(safe-area-inset-bottom) + 52px);
+  }
+}
+
+.pdf-style-title {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Two choices side by side; the chosen one raised, as a pill. */
+.pdf-segmented {
+  display: flex;
+  margin: 8px 0;
+  padding: 3px;
+  border-radius: 14px;
+  background: var(--bg);
+}
+
+.pdf-segmented button {
+  flex: 1;
+  min-height: 38px;
+  border: 0;
+  border-radius: 11px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-weight: 500;
+}
+
+.pdf-segmented button[aria-selected='true'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.18);
+}
+
+.pdf-style-preview {
+  display: grid;
+  place-items: center;
+  height: 64px;
+  margin-bottom: 4px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.pdf-style-preview svg {
+  width: 100%;
+  height: 100%;
+}
+
+.pdf-eraser-preview {
+  height: 128px;
+  margin-top: 4px;
+}
+
+.pdf-eraser-dot {
+  width: var(--size);
+  height: var(--size);
+  border: 1px solid rgb(90 90 90);
+  border-radius: 50%;
+  background: rgb(128 128 128 / 0.15);
+}
+
+.pdf-slider {
+  display: block;
+  margin: 8px 0;
+}
+
+.pdf-slider-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.pdf-slider-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sliders: a thick rounded track with a white knob, as in the system's own pickers. */
+.pdf-slider input {
+  --track: var(--bg);
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  border-radius: 14px;
+  background: var(--track);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.pdf-slider input::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  border: 7px solid #fff;
+  border-radius: 50%;
+  background: #8a8d94;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+  -webkit-appearance: none;
+}
+
+.pdf-slider input::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 7px solid #fff;
+  border-radius: 50%;
+  background: #8a8d94;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+
+.pdf-opacity input {
+  --track: linear-gradient(to right, transparent, var(--colour)),
+    repeating-conic-gradient(#c9ccd2 0 25%, #fff 0 50%) 0 0 / 10px 10px;
+}
+
+.pdf-hue input {
+  --track: linear-gradient(to right, #f00, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00);
+}
+
+.pdf-gradient input {
+  --track: linear-gradient(to right, var(--from), var(--to));
+}
+
+/* Twelve hues and a grey column, light to dark: cells touch, like a paint chart. */
+.pdf-colour-grid {
+  display: grid;
+  grid-template-columns: repeat(13, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.pdf-colour-cell {
+  position: relative;
+  aspect-ratio: 1;
+  min-height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.pdf-colour-cell[aria-checked='true']::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 2px solid var(--ring, #fff);
+  border-radius: 50%;
+}
+
+.pdf-colour-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pdf-colour-footer .pagebar-icon {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 22px;
+  background: none;
+  color: var(--text);
+}
+
+.pdf-colour-hex {
+  flex: 1;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pdf-colour-current {
+  width: 48px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}

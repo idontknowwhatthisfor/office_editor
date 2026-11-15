@@ -172,10 +172,19 @@
   color: var(--text);
   font: inherit;
   font-size: 18px;
+  /* Some buttons are held for their settings: no text selection or callout on a long press. */
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 .docx-tool:active {
   background: var(--border);
+}
+
+/* A button whose settings panel is open (held), as in the PDF editor. */
+.docx-tool.active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
 }
 
 .docx-tool-h {
