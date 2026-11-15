@@ -302,3 +302,84 @@ body.pdf-drawing .pdf-edit-layer {
   background: #fff;
   touch-action: none;
 }
+
+/* ------------------------------------------------------------ a selected text box (textbox.ts) */
+
+.pdf-tb-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.pdf-tb-frame {
+  position: absolute;
+  box-sizing: border-box;
+  outline: 2px solid var(--accent);
+  border-radius: 2px;
+  pointer-events: auto;
+  /* One finger drags the box; two still zoom. */
+  touch-action: pinch-zoom;
+  cursor: move;
+}
+
+.pdf-tb-frame.dragging {
+  outline-style: dashed;
+}
+
+.pdf-tb-handle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: #fff;
+  transform: translate(-50%, -50%);
+  touch-action: none;
+  cursor: nwse-resize;
+}
+
+/* A larger target than the dot, for a finger. */
+.pdf-tb-handle::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+
+.pdf-tb-bar {
+  position: absolute;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 24px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pdf-tb-bar[hidden] {
+  display: none;
+}
+
+.pdf-tb-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 20px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.pdf-tb-tool:active {
+  background: var(--border);
+}

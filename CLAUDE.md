@@ -42,7 +42,11 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     swipe is one `erase` op mapping each touched edit to what it became, so undo is one step.
     `marks.ts` reads the app's own saved annotations back when edit mode starts (named
     `/NM (OfficeEditor-…)`; older files by the exact keys the app writes), so they can be erased
-    like new marks; PDF.js leaves them off the canvas via its annotation storage (`deleted`
+    like new marks; `textbox.ts`: with no tool on (or with Add text), a tap on a text box the
+    app placed, new or saved, selects it: drag its frame to move, the corner handle scales the
+    font size, its bar edits the text (also a second tap), colour or deletes; each is one
+    `replace` op (undo follows the selection), and on save a changed saved box is removed and
+    written again. PDF.js leaves them off the canvas via its annotation storage (`deleted`
     entries, `ENABLE_STORAGE`; in a form, which otherwise renders with `ENABLE_FORMS`, the
     fields that mode leaves out are hidden the same way). Untouched ones stay in the file as they
     are; erased ones are removed with their appearances. Other apps' annotations are left alone. The editor's panels, toast and dialogs live in

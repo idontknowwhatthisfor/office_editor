@@ -6,6 +6,7 @@ import { css, editSvg, type ColourTarget, type Edit, type FormValue, type PageSp
 import { overlay } from '../overlay';
 import { along, erasePart, eraseWhole, type Point } from './erase';
 import { openStylePanel, readStyle, saveStyle, type StyleTarget } from './style';
+import { TextBoxes, type TextEdit } from './textbox';
 
 // PDF editing (PRD M5): highlight and underline selected text, draw, add text, sign, rotate or
 // delete pages, and fill in forms. Edits stay in memory, drawn over the pages, until the user
@@ -22,6 +23,8 @@ interface PageState {
 
 type Op =
   | { kind: 'edit'; edit: Edit }
+  /** A text box moved, scaled, retyped or recoloured (textbox.ts). */
+  | { kind: 'replace'; page: number; from: Edit; to: Edit }
   /** One swipe of an eraser: each edit it touched, and what that edit became. */
   | { kind: 'erase'; page: number; changes: Map<Edit, Edit[]> }
   | { kind: 'rotate'; page: number }
@@ -83,6 +86,8 @@ export class PdfEditor {
   private redoButton: HTMLButtonElement;
   private toast = el('div', 'pdf-toast');
   private toastTimer = 0;
+  /** The selected text box's frame and bar. */
+  private boxes: TextBoxes;
   active = false;
 
   constructor(private host: EditorHost, private hasForms: boolean, onDone: () => void) {
@@ -122,6 +127,7 @@ export class PdfEditor {
     this.redoButton = button(ICON_REDO, t('redo'), () => this.redo());
     button(ICON_DONE, t('done'), () => {
       this.setTool('none');
+      this.boxes.clear();
       this.active = false;
       onDone();
     });
@@ -134,6 +140,16 @@ export class PdfEditor {
       }, true);
     }
     overlay().append(this.toast);
+    this.boxes = new TextBoxes({
+      page: (index) => this.pages.get(index),
+      edits: (page) => this.edits(page),
+      preview: (page, from, to) => this.drawPage(page, this.edits(page).map((e) => (e === from ? to : e))),
+      commit: (from, to) => this.push(to
+        ? { kind: 'replace', page: from.page, from, to }
+        : { kind: 'erase', page: from.page, changes: new Map([[from as Edit, []]]) }),
+      editText: (edit) => textDialog({ title: t('editText'), text: edit.text, size: edit.size, action: t('done') }),
+      closePanels: () => this.panel?.close(),
+    });
     this.updateButtons();
 
     registerEditor({
@@ -198,6 +214,17 @@ export class PdfEditor {
     const state: PageState = { el: pageEl, space, overlay };
     this.pages.set(index, state);
     this.listenDrawing(index, state);
+    // With no tool on, a tap on a text box the app placed selects it; elsewhere, lets it go.
+    pageEl.addEventListener('click', (e) => {
+      if (!this.active || this.tool !== 'none') return;
+      const hit = this.boxes.hit(index, e.clientX, e.clientY);
+      if (hit) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.panel?.close();
+        this.boxes.select(hit);
+      } else this.boxes.clear();
+    }, true);
     this.drawPage(index);
     this.drawBadge(index);
     if (this.hasForms) await this.addFormFields(state, proxy);
@@ -209,6 +236,7 @@ export class PdfEditor {
     for (const op of this.ops) {
       if (op.kind === 'edit') list.push(op.edit);
       else if (op.kind === 'erase') list = list.flatMap((e) => op.changes.get(e) ?? [e]);
+      else if (op.kind === 'replace') list = list.map((e) => (e === op.from ? op.to : e));
     }
     return page === undefined ? list : list.filter((e) => e.page === page);
   }
@@ -260,6 +288,7 @@ export class PdfEditor {
     const op = this.ops.pop();
     if (!op) return;
     this.undone.push(op);
+    if (op.kind === 'replace') this.boxes.follow(op.to, op.from);
     this.changed(op);
   }
 
@@ -267,6 +296,7 @@ export class PdfEditor {
     const op = this.undone.pop();
     if (!op) return;
     this.ops.push(op);
+    if (op.kind === 'replace') this.boxes.follow(op.from, op.to);
     this.changed(op);
   }
 
@@ -275,6 +305,7 @@ export class PdfEditor {
     this.drawPage(page);
     this.drawBadge(page);
     this.updateButtons();
+    this.boxes.refresh();
     setDirty(this.ops.length > 0 || this.forms.size > 0);
   }
 
@@ -288,6 +319,7 @@ export class PdfEditor {
   private setTool(tool: Tool, hint = true): void {
     if (this.tool === 'pick-colour' && tool !== 'pick-colour') this.picking = null;
     this.tool = tool;
+    if (tool !== 'none' && tool !== 'pick-colour') this.boxes.clear();
     for (const [name, b] of this.toolButtons) b.classList.toggle('active', name === tool);
     this.drawEraserButton();
     // Drawing and placing take single-finger touches on the page instead of scrolling.
@@ -455,7 +487,14 @@ export class PdfEditor {
       const t = tap;
       if (t && t.id === e.pointerId && !cancelled && Math.hypot(e.clientX - t.x, e.clientY - t.y) < TAP_SLOP) {
         tap = null;
-        if (this.tool === 'text') void this.addText(index, state, t.vx, t.vy);
+        if (this.tool === 'text') {
+          // On a text box already there: select it, rather than putting another on top.
+          const hit = this.boxes.hit(index, e.clientX, e.clientY);
+          if (hit) {
+            this.setTool('none');
+            this.boxes.select(hit);
+          } else void this.addText(index, state, t.vx, t.vy);
+        }
         else if (this.tool === 'place-signature') this.placeSignature(index, state, t.vx, t.vy);
         else if (this.tool === 'pick-colour') this.pickColour(state, e);
         return;
@@ -509,11 +548,14 @@ export class PdfEditor {
   }
 
   private async addText(index: number, state: PageState, vx: number, vy: number): Promise<void> {
-    const result = await textDialog();
-    if (!result) return;
+    const result = await textDialog({ title: t('addText'), action: t('add') });
+    if (!result?.text) return;
     const [x, y] = state.space.toPdf(vx, vy);
-    this.push({ kind: 'edit', edit: { kind: 'text', page: index, x, y, text: result.text, size: result.size, colour: this.style.text.colour } });
+    const edit: TextEdit = { kind: 'text', page: index, x, y, text: result.text, size: result.size, colour: this.style.text.colour };
+    this.push({ kind: 'edit', edit });
     this.setTool('none');
+    // Ready to be moved, scaled or recoloured.
+    this.boxes.select(edit);
   }
 
   private showStyle(target: StyleTarget): void {
@@ -738,6 +780,7 @@ export class PdfEditor {
     this.base = this.edits();
     this.ops = [];
     this.undone = [];
+    this.boxes.clear();
     this.forms.clear();
     // Show the file as saved, edits now part of it.
     if (result.mode === 'overwrite') this.host.reload();
@@ -839,13 +882,18 @@ function textButton(label: string, onClick: () => void, primary = false): HTMLBu
 /** The size the last text box was given, for the next one. */
 let lastTextSize = 14;
 
-function textDialog(): Promise<{ text: string; size: number } | null> {
+/**
+ * Asks for a text box's text and font size: a new box (empty) or one being changed. Resolves with
+ * empty text if the text was cleared (a changed box is then deleted), null if cancelled.
+ */
+function textDialog(o: { title: string; action: string; text?: string; size?: number }): Promise<{ text: string; size: number } | null> {
   return new Promise((resolve) => {
-    const d = dialog(t('addText'));
+    const d = dialog(o.title);
     const area = el('textarea', 'pdf-dialog-text');
     area.rows = 3;
+    area.value = o.text ?? '';
     // Font size in points, typed in (PDF units are points, so it is the size on the page).
-    const { field, input, hint } = fontSizeField(lastTextSize);
+    const { field, input, hint } = fontSizeField(o.size ?? lastTextSize);
     field.classList.add('pdf-size-field');
     const caption = el('span', 'pdf-size-caption');
     caption.textContent = t('fontSize');
@@ -862,7 +910,7 @@ function textDialog(): Promise<{ text: string; size: number } | null> {
     d.box.insertBefore(hint, d.actions);
     d.actions.append(
       textButton(t('cancel'), () => { d.close(); resolve(null); }),
-      textButton(t('add'), () => {
+      textButton(o.action, () => {
         const text = area.value.replace(/\s+$/, '');
         const size = parseFontSize(input.value);
         if (text && size === null) {
@@ -872,7 +920,7 @@ function textDialog(): Promise<{ text: string; size: number } | null> {
         }
         d.close();
         if (text && size) lastTextSize = size;
-        resolve(text && size ? { text, size } : null);
+        resolve(text && size ? { text, size } : { text: '', size: 0 });
       }, true),
     );
     area.focus();
