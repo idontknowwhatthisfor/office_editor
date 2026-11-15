@@ -40,7 +40,12 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     of a highlight) and size. See-through marks are saved as an inner transparency group painted
     with `ca`/`CA` (no annotation `/CA`, which some readers would apply on top). `erase.ts`: a
     swipe is one `erase` op mapping each touched edit to what it became, so undo is one step.
-    Only marks made since opening can be erased. The editor's panels, toast and dialogs live in
+    `marks.ts` reads the app's own saved annotations back when edit mode starts (named
+    `/NM (OfficeEditor-…)`; older files by the exact keys the app writes), so they can be erased
+    like new marks; PDF.js leaves them off the canvas via its annotation storage (`deleted`
+    entries, `ENABLE_STORAGE`). Untouched ones stay in the file as they are; erased ones are
+    removed with their appearances. Other apps' annotations, and files with form fields, are left
+    alone. The editor's panels, toast and dialogs live in
     `overlay.ts`'s layer, counter-scaled to the visible area like the bottom bar, so pinch-zoom
     doesn't magnify them. While a tool is on, the edit layer has `touch-action: pinch-zoom`: one
     finger uses the tool, two zoom and scroll (a mark begun < 300 ms before the second finger is

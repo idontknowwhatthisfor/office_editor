@@ -97,6 +97,8 @@ class PdfViewer {
   private bar: PageBar;
 
   private editor: PdfEditor;
+  /** Some of the file's annotations are left off the pages (see hideAnnotations). */
+  private hiding = false;
 
   constructor(
     root: HTMLElement,
@@ -134,6 +136,7 @@ class PdfViewer {
         size: file.size,
         currentPage: () => this.current,
         reload: () => location.reload(),
+        hideAnnotations: (list) => this.hideAnnotations(list),
       },
       hasForms,
       () => this.bar.showRow(this.bar.main),
@@ -339,7 +342,7 @@ class PdfViewer {
       page.task = proxy.render({
         canvas,
         viewport,
-        annotationMode: this.hasForms ? pdfjs.AnnotationMode.ENABLE_FORMS : pdfjs.AnnotationMode.ENABLE,
+        annotationMode: this.annotationMode(),
       });
       await page.task.promise;
       page.task = undefined;
@@ -399,6 +402,27 @@ class PdfViewer {
     void this.pump();
   }
 
+  /**
+   * Leaves annotations off the rendered pages, through PDF.js's annotation storage: an entry
+   * marked `deleted` under its editor prefix drops that annotation when a page is drawn with
+   * ENABLE_STORAGE. Pages already on screen are drawn again (the old canvas stays until then).
+   */
+  private hideAnnotations(list: { page: number; id: string }[]): void {
+    const storage = this.pdf.annotationStorage;
+    for (const { page, id } of list) storage.setValue(`pdfjs_internal_editor_officeeditor_${id}`, { deleted: true, id, pageIndex: page });
+    this.hiding = true;
+    for (const index of new Set(list.map((l) => l.page))) {
+      const page = this.pages[index];
+      if (page?.canvas) page.canvasScale = 0;
+    }
+    void this.pump();
+  }
+
+  private annotationMode(): number {
+    if (this.hasForms) return pdfjs.AnnotationMode.ENABLE_FORMS;
+    return this.hiding ? pdfjs.AnnotationMode.ENABLE_STORAGE : pdfjs.AnnotationMode.ENABLE;
+  }
+
   // ---- thumbnails ----
 
   private async renderThumb(index: number, frame: HTMLElement): Promise<void> {
@@ -408,7 +432,9 @@ class PdfViewer {
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(viewport.width);
     canvas.height = Math.round(viewport.height);
-    await proxy.render({ canvas, viewport }).promise;
+    // Leaving out the marks the editor draws instead, as the pages do.
+    const mode = this.hiding && !this.hasForms ? pdfjs.AnnotationMode.ENABLE_STORAGE : pdfjs.AnnotationMode.ENABLE;
+    await proxy.render({ canvas, viewport, annotationMode: mode }).promise;
     frame.append(canvas);
   }
 }

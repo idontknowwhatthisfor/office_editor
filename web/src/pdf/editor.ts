@@ -35,6 +35,8 @@ export interface EditorHost {
   currentPage(): number;
   /** Shows the saved file in place of the one on screen. */
   reload(): void;
+  /** Leaves these annotations (PDF.js ids, "12R") off the rendered pages: the editor draws them. */
+  hideAnnotations(list: { page: number; id: string }[]): void;
 }
 
 const SIGNATURE_KEY = 'officeeditor.signature';
@@ -49,6 +51,14 @@ const TAP_SLOP = 12;
 export class PdfEditor {
   readonly row = el('div', 'pagebar-row pdf-edit-row');
   private pages = new Map<number, PageState>();
+  /**
+   * The marks the page already had when the edits in `ops` began: the app's own annotations read
+   * from the file (marks.ts), and after a save that didn't reload, the marks then saved.
+   */
+  private base: Edit[] = [];
+  /** Base marks that are annotations in the file on screen, by their object reference. */
+  private savedRefs = new Map<Edit, { num: number; gen: number }>();
+  private marksRead = false;
   private ops: Op[] = [];
   private undone: Op[] = [];
   private forms = new Map<string, FormValue>();
@@ -141,7 +151,31 @@ export class PdfEditor {
     }
     this.active = true;
     this.say(t('editHint'));
+    void this.readSavedMarks();
     return true;
+  }
+
+  /**
+   * Makes the marks this app saved earlier editable again: they join the base list, drawn by the
+   * editor, and PDF.js stops drawing them into the page. Not in files with form fields, whose pages
+   * are rendered without PDF.js's annotation storage (the fields are inputs over the page).
+   */
+  private async readSavedMarks(): Promise<void> {
+    if (this.marksRead || this.hasForms) return;
+    this.marksRead = true;
+    try {
+      const { readMarks, refId } = await import('./marks');
+      const marks = await readMarks(await this.host.pdf.getData());
+      if (!marks.length) return;
+      for (const { edit, ref } of marks) {
+        this.base.push(edit);
+        this.savedRefs.set(edit, ref);
+      }
+      this.host.hideAnnotations(marks.map(({ edit, ref }) => ({ page: edit.page, id: refId(ref) })));
+      for (const page of new Set(marks.map((m) => m.edit.page))) this.drawPage(page);
+    } catch (e) {
+      console.warn('saved marks not read', e);
+    }
   }
 
   // ---------------------------------------------------------------- pages
@@ -172,7 +206,7 @@ export class PdfEditor {
 
   /** The edits as they now stand (added, less what was erased), in drawing order. */
   private edits(page?: number): Edit[] {
-    let list: Edit[] = [];
+    let list: Edit[] = [...this.base];
     for (const op of this.ops) {
       if (op.kind === 'edit') list.push(op.edit);
       else if (op.kind === 'erase') list = list.flatMap((e) => op.changes.get(e) ?? [e]);
@@ -686,9 +720,13 @@ export class PdfEditor {
   private async produce(): Promise<Uint8Array> {
     const { writeEdits, EncryptedPdfError } = await import('./write');
     const edits = this.edits();
+    // Saved marks still as they were stay in the file untouched; erased (or partly erased) ones
+    // come out, and what is left of them is written again like a new mark.
+    const now = new Set(edits);
+    const removed = [...this.savedRefs].filter(([edit]) => !now.has(edit)).map(([, ref]) => ref);
     try {
       const original = await this.host.pdf.getData();
-      return await writeEdits(original, edits, this.forms, this.pageOps());
+      return await writeEdits(original, edits.filter((e) => !this.savedRefs.has(e)), this.forms, this.pageOps(), removed);
     } catch (e) {
       this.say(e instanceof EncryptedPdfError ? t('pdfProtected') : t('saveFailed'));
       throw e;
@@ -697,6 +735,8 @@ export class PdfEditor {
 
   private saved(result: SaveResult): void {
     if (!result.ok) return;
+    // The page still shows the file as it was opened, which the next save starts from again.
+    this.base = this.edits();
     this.ops = [];
     this.undone = [];
     this.forms.clear();

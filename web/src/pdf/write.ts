@@ -1,21 +1,25 @@
 import {
   PDFDocument, PDFName, PDFNumber, PDFString, PDFHexString, StandardFonts, degrees,
   PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField,
-  type PDFFont, type PDFPage, type PDFRef,
+  PDFDict, PDFRef, PDFStream,
+  type PDFFont, type PDFPage,
 } from 'pdf-lib';
 import type { Edit, FormValue, Rgb } from './edits';
+import { MARK_NAME_PREFIX } from './marks';
 
 // Writes the edits made in the viewer into the PDF with pdf-lib.
 //
 // Highlights, underlines, ink and text boxes become real PDF annotations, each with its own
 // appearance stream, so every reader (Acrobat, Chrome, Preview, PDF.js) draws them the same and
 // they stay editable in other apps. A signature is drawn into the page itself. Form fields get
-// their values and fresh appearances.
+// their values and fresh appearances. Each annotation is named (`/NM`), so that marks.ts can
+// read the app's own marks back for editing; `removed` are such marks that were erased since.
 
 export class EncryptedPdfError extends Error {}
 
 export async function writeEdits(
   original: Uint8Array, edits: Edit[], forms: Map<string, FormValue>, pageOps: PageOps,
+  removed: { num: number; gen: number }[] = [],
 ): Promise<Uint8Array> {
   let doc: PDFDocument;
   try {
@@ -24,10 +28,12 @@ export async function writeEdits(
     if (String(e).includes('encrypted')) throw new EncryptedPdfError('encrypted');
     throw e;
   }
+  dropOldGenerations(doc);
   const pages = doc.getPages();
   let helvetica: PDFFont | null = null;
   const font = async () => (helvetica ??= await doc.embedFont(StandardFonts.Helvetica));
 
+  if (removed.length) removeAnnots(doc, removed.map((r) => PDFRef.of(r.num, r.gen)));
   if (forms.size) await fillForms(doc, forms, await font());
 
   for (const edit of edits) {
@@ -65,7 +71,27 @@ export async function writeEdits(
   // Read the result back before it goes anywhere near the original file.
   const check = await PDFDocument.load(bytes, { updateMetadata: false });
   if (check.getPageCount() !== pages.length - deleted.length) throw new Error('page count changed unexpectedly');
+  // pdf-lib reads a file by scanning its objects, not through the cross-reference table, so a
+  // broken table passes the check above. Two objects with one number is what breaks it.
+  const numbers = check.context.enumerateIndirectObjects().map(([ref]) => ref.objectNumber);
+  if (new Set(numbers).size !== numbers.length) throw new Error('object number written twice');
   return bytes;
+}
+
+/**
+ * An incremental update may give an object number a new generation (e.g. a re-issued catalog,
+ * `3184 1 obj` after `3184 0 obj`). pdf-lib reads every revision and keeps both; written out,
+ * one number gets two cross-reference entries, every later entry shifts by one, and other readers
+ * can no longer find the pages. Only the newest generation is current.
+ */
+function dropOldGenerations(doc: PDFDocument) {
+  const objects = doc.context.enumerateIndirectObjects();
+  const newest = new Map<number, PDFRef>();
+  for (const [ref] of objects) {
+    const seen = newest.get(ref.objectNumber);
+    if (!seen || ref.generationNumber > seen.generationNumber) newest.set(ref.objectNumber, ref);
+  }
+  for (const [ref] of objects) if (newest.get(ref.objectNumber) !== ref) doc.context.delete(ref);
 }
 
 export interface PageOps {
@@ -104,9 +130,40 @@ function addAnnot(doc: PDFDocument, page: PDFPage, dict: Record<string, unknown>
     F: 4, // print
     P: page.ref,
     M: PDFString.fromDate(new Date()),
+    NM: PDFString.of(MARK_NAME_PREFIX + Math.random().toString(36).slice(2, 12)),
     ...dict,
   });
   page.node.addAnnot(doc.context.register(annot));
+}
+
+/** Takes the given annotations (the app's own) off their pages, with their appearances. */
+function removeAnnots(doc: PDFDocument, refs: PDFRef[]): void {
+  const gone = new Set(refs);
+  for (const page of doc.getPages()) {
+    const annots = page.node.Annots();
+    if (!annots) continue;
+    for (let i = annots.size() - 1; i >= 0; i--) {
+      const ref = annots.get(i);
+      if (ref instanceof PDFRef && gone.has(ref)) annots.remove(i);
+    }
+  }
+  // Their objects too, or they would stay in the file unseen. write.ts made them, so nothing else
+  // shares them: the appearance and, for a see-through one, its inner group.
+  for (const ref of gone) {
+    const dict = doc.context.lookupMaybe(ref, PDFDict);
+    const ap = dict?.lookupMaybe(PDFName.of('AP'), PDFDict);
+    const n = ap?.get(PDFName.of('N'));
+    if (n instanceof PDFRef) {
+      const stream = doc.context.lookup(n);
+      const xobjects = stream instanceof PDFStream
+        ? stream.dict.lookupMaybe(PDFName.of('Resources'), PDFDict)?.lookupMaybe(PDFName.of('XObject'), PDFDict)
+        : undefined;
+      const inner = xobjects?.get(PDFName.of('Fm0'));
+      if (inner instanceof PDFRef) doc.context.delete(inner);
+      doc.context.delete(n);
+    }
+    doc.context.delete(ref);
+  }
 }
 
 const rgb = (c: Rgb) => c.map((v) => +v.toFixed(3)).join(' ');
