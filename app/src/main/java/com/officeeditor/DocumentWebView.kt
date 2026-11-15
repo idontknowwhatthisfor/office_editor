@@ -9,6 +9,7 @@ import android.system.Os
 import android.system.OsConstants
 import android.util.Log
 import android.webkit.ConsoleMessage
+import android.webkit.ValueCallback
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -84,6 +85,13 @@ fun createDocumentWebView(
                 }
                 return true
             }
+
+            // A page's <input type="file"> (the Word editor's Insert picture): the shell picks.
+            override fun onShowFileChooser(
+                view: WebView,
+                callback: ValueCallback<Array<Uri>>,
+                params: FileChooserParams,
+            ): Boolean = host.chooseImage { uris -> callback.onReceiveValue(uris) }
         }
         addJavascriptInterface(Bridge(doc, format, host, startEditing, print), "OfficeBridge")
         loadUrl(VIEWER_URL)
@@ -175,6 +183,11 @@ interface EditorHost {
     fun printFailed() = Unit
     /** A presentation is shown full screen (or no longer is). */
     fun setPresenting(on: Boolean) = Unit
+    /**
+     * The page asked for a picture: show the system's picker and call [done] with the chosen
+     * one (null when cancelled). False if this screen can't pick (the page then gets nothing).
+     */
+    fun chooseImage(done: (Array<Uri>?) -> Unit): Boolean = false
 }
 
 /** What the web viewers can ask the native shell. Called on a WebView thread, not the UI thread. */

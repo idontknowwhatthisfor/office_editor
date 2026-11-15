@@ -3,7 +3,7 @@ import { t } from '../i18n';
 import { isDirty, registerEditor, setDirty, type SaveResult } from '../save';
 import { fontSizeField, holdable, parseFontSize } from '../ui';
 import { css, editSvg, type ColourTarget, type Edit, type FormValue, type PageSpace, type Rgb } from './edits';
-import { overlay } from './overlay';
+import { overlay } from '../overlay';
 import { along, erasePart, eraseWhole, type Point } from './erase';
 import { openStylePanel, readStyle, saveStyle, type StyleTarget } from './style';
 

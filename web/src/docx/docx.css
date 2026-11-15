@@ -88,8 +88,12 @@
 /* The edit view: real-size paper scaled to the screen, as in the viewer (editor.ts). */
 .docx-edit-frame {
   /* Sized by editor.ts to the scaled paper; room at the bottom for the toolbar. */
+  position: relative;
   margin: 8px auto 72px;
   overflow: hidden;
+  /* Not scrollable even by script: scrollIntoView or a focused paragraph would otherwise scroll
+     the paper inside its frame instead of the page. */
+  overflow: clip;
 }
 
 .docx-view.docx-edit {
@@ -285,4 +289,169 @@
     padding-top: 2px;
     padding-bottom: calc(2px + env(safe-area-inset-bottom));
   }
+}
+
+/* ------------------------------------------------------------ pictures (pictures.ts) */
+
+/* A picture the editor can change: its box shows the uncropped part at the picture's size. */
+.docx-edit .oe-pic {
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+  vertical-align: top;
+  cursor: pointer;
+}
+
+.docx-edit .oe-pic[data-rot] {
+  overflow: visible;
+}
+
+.docx-edit .oe-pic.oe-selected {
+  touch-action: none;
+}
+
+.docx-edit .oe-pic.oe-cropping img {
+  visibility: hidden;
+}
+
+/* A paragraph holding only pictures isn't greyed out like other locked ones. */
+.docx-edit .oe-locked.oe-piconly {
+  opacity: 1;
+  cursor: auto;
+}
+
+.docx-edit p.oe-picpara {
+  margin: 0;
+}
+
+/* The selection, its toolbar, the drop line and the crop view, over the paper. */
+.oe-pic-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.oe-pic-sel {
+  position: absolute;
+  box-sizing: border-box;
+  outline: 2px solid var(--accent);
+  pointer-events: none;
+}
+
+.oe-pic-sel.dragging {
+  outline-style: dashed;
+}
+
+.oe-pic-handle,
+.oe-crop-handle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: #fff;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* A larger target than the dot, for a finger. */
+.oe-pic-handle::before,
+.oe-crop-handle::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+
+.oe-pic-sel.dragging .oe-pic-handle {
+  visibility: hidden;
+}
+
+:is(.oe-pic-handle, .oe-crop-handle)[data-h='nw'] { left: 0; top: 0; }
+:is(.oe-pic-handle, .oe-crop-handle)[data-h='n'] { left: 50%; top: 0; }
+:is(.oe-pic-handle, .oe-crop-handle)[data-h='ne'] { left: 100%; top: 0; }
+:is(.oe-pic-handle, .oe-crop-handle)[data-h='e'] { left: 100%; top: 50%; }
+:is(.oe-pic-handle, .oe-crop-handle)[data-h='se'] { left: 100%; top: 100%; }
+:is(.oe-pic-handle, .oe-crop-handle)[data-h='s'] { left: 50%; top: 100%; }
+:is(.oe-pic-handle, .oe-crop-handle)[data-h='sw'] { left: 0; top: 100%; }
+:is(.oe-pic-handle, .oe-crop-handle)[data-h='w'] { left: 0; top: 50%; }
+
+.oe-pic-bar {
+  position: absolute;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 24px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.oe-pic-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 20px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.oe-pic-tool:active {
+  background: var(--border);
+}
+
+.oe-pic-ghost {
+  position: absolute;
+  opacity: 0.6;
+  pointer-events: none;
+  outline: 2px dashed var(--accent);
+}
+
+.oe-pic-ghost img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.oe-pic-drop {
+  position: absolute;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+/* Crop: the whole picture dimmed, the part kept bright inside a frame with eight handles. */
+.oe-crop {
+  position: absolute;
+  background: #000;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.oe-crop img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.oe-crop-dim {
+  opacity: 0.35;
+}
+
+.oe-crop-window {
+  position: absolute;
+  outline: 2px solid var(--accent);
 }

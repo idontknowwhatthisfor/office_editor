@@ -1,18 +1,5 @@
-/* The tool settings panel (style.ts) and the overlay layer it lives in (overlay.ts); shared by
-   the PDF and Word editors. */
-
-/* Popovers, toast and dialogs: pinned to the visible area at normal size (overlay.ts). */
-.pdf-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  transform-origin: 0 0;
-  pointer-events: none;
-}
-
-:where(.pdf-overlay) > * {
-  pointer-events: auto;
-}
+/* The tool settings panel (style.ts), shared by the PDF and Word editors. It lives in the
+   overlay layer (../overlay.ts, styled in ../style.css). */
 
 .pdf-dialog-hint {
   margin: 8px 0 0;

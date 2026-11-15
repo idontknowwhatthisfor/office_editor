@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
@@ -86,6 +87,9 @@ class ViewerActivity : ComponentActivity(), EditorHost {
     private var closeAfterSave = false
     private var pendingCopy: File? = null
     private lateinit var createCopy: ActivityResultLauncher<String>
+    private lateinit var pickImage: ActivityResultLauncher<PickVisualMediaRequest>
+    /** Waiting for the picture the page asked for (Insert picture). */
+    private var imageChosen: ((Array<Uri>?) -> Unit)? = null
     override val saves by lazy { SaveReceiver(this) }
 
     private enum class Dialog { NONE, SAVE, UNSAVED }
@@ -106,6 +110,11 @@ class ViewerActivity : ComponentActivity(), EditorHost {
         createCopy = registerForActivityResult(
             ActivityResultContracts.CreateDocument(doc?.format?.mime ?: "application/octet-stream"),
         ) { target -> copyChosen(target) }
+        // The system's photo picker: needs no storage permission.
+        pickImage = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+            imageChosen?.invoke(uri?.let { arrayOf(it) })
+            imageChosen = null
+        }
         val recents = RecentFiles(this)
         if (doc != null && error == null) {
             thread {
@@ -395,6 +404,14 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                 printFailed()
             }
         }
+    }
+
+    override fun chooseImage(done: (Array<Uri>?) -> Unit): Boolean {
+        // A picker left open by an earlier request answers that one with nothing.
+        imageChosen?.invoke(null)
+        imageChosen = done
+        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        return true
     }
 
     override fun printFailed() {

@@ -1,4 +1,5 @@
-// The layer the PDF editor's popovers live in: its settings panels, toast and dialogs.
+// The layer the editors' controls live in: the PDF editor's settings panels, toast and dialogs,
+// and the Word editor's toolbar, toast, dialogs, settings panels and picture controls.
 //
 // Pinch-zoom is the WebView's own, and a fixed element belongs to the layout viewport, so it
 // would be magnified with the page (and partly pushed off screen). This layer is counter-
@@ -10,7 +11,7 @@ let root: HTMLElement | null = null;
 export function overlay(): HTMLElement {
   if (root) return root;
   const layer = document.createElement('div');
-  layer.className = 'pdf-overlay';
+  layer.className = 'oe-overlay';
   document.body.append(layer);
   root = layer;
   const viewport = window.visualViewport;

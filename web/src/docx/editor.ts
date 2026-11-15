@@ -5,6 +5,8 @@ import { t } from '../i18n';
 import { registerEditor, setDirty, type SaveResult } from '../save';
 import { fontSizeField, holdable, HOLD_MS, parseFontSize } from '../ui';
 import { openStylePanel, readStyle, saveStyle } from '../pdf/style';
+import { overlay } from '../overlay';
+import { PictureTool } from './pictures';
 import { fontsLoaded, GUTTER, scaleLineHeights } from './viewer';
 
 // Word editing (PRD M7), done in place on the file's own XML.
@@ -103,6 +105,8 @@ class DocxEditor {
   private styles: Document | null = null;
   /** Lists started in this session; each gets its own numbering definition on save. */
   private pendingLists: ('bullet' | 'number')[] = [];
+  /** Inserting, moving, resizing and cropping pictures (made once the document is shown). */
+  private pictures!: PictureTool;
   /** The settings panel that is open, and the button it belongs to. */
   private panel: { button: HTMLElement; close: () => void } | null = null;
   /** Underline and text colours from the settings panels. */
@@ -165,11 +169,15 @@ class DocxEditor {
 
     this.buildBar();
     this.frame.append(this.view);
-    this.root.replaceChildren(this.frame, this.bar);
+    this.root.replaceChildren(this.frame);
+    // The toolbar (like the toast, dialogs and panels) stays at normal size on a pinch-zoomed page.
+    overlay().append(this.bar);
     await fontsLoaded(this.view);
     lineHeights.measure();
     for (const p of this.view.querySelectorAll<HTMLElement>('p[data-p]')) this.original.set(p.dataset.p!, p.outerHTML);
     this.fitToScreen();
+    this.pictures = new PictureTool({ view: this.view, frame: this.frame, doc: this.doc, changed: () => this.changed(true) });
+    this.pictures.prepare();
     this.listen();
     this.history = [this.view.innerHTML];
     registerEditor({ fileName: this.fileName, produce: () => this.produce(), saved: (r) => this.saved(r) });
@@ -253,7 +261,7 @@ class DocxEditor {
     add(ICON_ALIGN, t('alignment'), () => this.cycleAlign());
     add('H', t('headingStyle'), () => void this.headingMenu(), 'docx-tool-h');
     add(ICON_LIST, t('listStyle'), () => this.cycleList(), '', () => void this.listMenu());
-    add(ICON_PICTURE, t('insertPicture'), () => toast(t('insertPictureSoon')));
+    add(ICON_PICTURE, t('insertPicture'), () => this.pictures.pick());
     add(ICON_UNDO, t('undo'), () => this.undo());
     add(ICON_REDO, t('redo'), () => this.redo());
   }
@@ -532,6 +540,7 @@ class DocxEditor {
   }
 
   private restore(html: string): void {
+    this.pictures.clear();
     this.view.innerHTML = html;
     setDirty(this.history.length > 1);
   }
@@ -547,6 +556,8 @@ class DocxEditor {
     let lastWritten: Element | null = null;
     let lastIndex = -1;
     const lists = { bullet: 0, number: 0 };
+    // Each paragraph on screen and its paragraph in the file being written (for pictures).
+    const written = new Map<HTMLElement, Element>();
 
     for (const p of this.view.querySelectorAll<HTMLElement>('p[data-p]')) {
       const i = Number(p.dataset.p);
@@ -554,6 +565,7 @@ class DocxEditor {
       if (!source) continue;
       const isNew = seen.has(i);
       seen.add(i);
+      written.set(p, source);
       if (!this.editable[i]) {
         lastWritten = source;
         lastIndex = i;
@@ -573,6 +585,7 @@ class DocxEditor {
         source.parentNode!.replaceChild(built, source);
         paras[i] = built;
       }
+      written.set(p, built);
       lastWritten = built;
       lastIndex = i;
     }
@@ -587,6 +600,7 @@ class DocxEditor {
     });
 
     const out = await JSZip.loadAsync(await this.zip.generateAsync({ type: 'arraybuffer' }));
+    await this.pictures.write(doc, out, this.docPath, paras, written);
     out.file(this.docPath, new XMLSerializer().serializeToString(doc), KEEP);
     if (this.styles) out.file('word/styles.xml', new XMLSerializer().serializeToString(this.styles), KEEP);
     if (this.pendingLists.length) await this.writeNumbering(out);
@@ -1015,7 +1029,7 @@ let toastEl: HTMLElement | null = null;
 let toastTimer = 0;
 
 function toast(text: string): void {
-  toastEl ??= document.body.appendChild(el('div', 'docx-toast'));
+  toastEl ??= overlay().appendChild(el('div', 'docx-toast'));
   toastEl.textContent = text;
   toastEl.classList.add('show');
   clearTimeout(toastTimer);
@@ -1036,7 +1050,7 @@ function dialogBox(title: string, body?: string): { box: HTMLElement; actions: H
   const actions = el('div', 'docx-dialog-actions');
   box.append(actions);
   scrim.append(box);
-  document.body.append(scrim);
+  overlay().append(scrim);
   return { box, actions, close: () => scrim.remove() };
 }
 

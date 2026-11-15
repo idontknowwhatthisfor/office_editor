@@ -1,6 +1,6 @@
 import './style.css';
 import { t } from '../i18n';
-import { overlay } from './overlay';
+import { overlay } from '../overlay';
 import { css, DEFAULT_STYLE, ERASER_SIZE, PEN_WIDTH, type ColourTarget, type Rgb, type Style } from './edits';
 
 // The settings panel of a PDF editing tool: a popover above the edit bar with that tool's

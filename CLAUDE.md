@@ -46,7 +46,8 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     entries, `ENABLE_STORAGE`; in a form, which otherwise renders with `ENABLE_FORMS`, the
     fields that mode leaves out are hidden the same way). Untouched ones stay in the file as they
     are; erased ones are removed with their appearances. Other apps' annotations are left alone. The editor's panels, toast and dialogs live in
-    `overlay.ts`'s layer, counter-scaled to the visible area like the bottom bar, so pinch-zoom
+    `src/overlay.ts`'s layer (shared with the Word editor's toolbar, toast, dialogs and picture
+    controls), counter-scaled to the visible area like the bottom bar, so pinch-zoom
     doesn't magnify them. While a tool is on, the edit layer has `touch-action: pinch-zoom`: one
     finger uses the tool, two zoom and scroll (a mark begun < 300 ms before the second finger is
     dropped; tap tools act on lift).
@@ -80,7 +81,22 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     first, and the open panel's own button only closes it. A colour or size applies
     at once to the selection (`data-color` / `data-ucolor` spans; a text colour with only a caret
     colours the paragraph) and is written as `w:color` / `w:u w:color`; the panel blurs the text
-    so the keyboard goes away. The picture button is UI only so far.
+    so the keyboard goes away.
+  - `src/docx/pictures.ts` — Word pictures: insert (the picture button; `<input type=file>`, which
+    the shell answers with Android's photo picker, `chooseImage`), and select (tap) to move (drag
+    to a gap between top-level paragraphs/tables), resize (corners keep the ratio, sides stretch one way), crop
+    (eight handles over the whole picture) or delete. Each editable picture (a run holding one
+    embedded pic) is wrapped in `span.oe-pic` whose attributes are its state (`data-cx/cy` EMU,
+    `data-crop` srcRect), so the editor's HTML-snapshot undo covers it; the selection UI lives in
+    the overlay (screen coordinates: `local()` converts page rects by the visual viewport's
+    offset and scale), never in the view. A picture alone in a top-level paragraph moves
+    with it (`data-moved`); one beside text goes into a new paragraph (`data-picpara`); emptied
+    paragraphs are hidden (`data-gone`) and removed on save. `write()` (from `produce`) changes
+    only extents/srcRect, moves runs, and adds new files to `word/media` with a relationship and
+    content type. Picked PNG/GIF/JPEG files are kept as they are (an EXIF-turned JPEG is redrawn
+    upright); other formats become PNG/JPEG. The paper's frame is `overflow: clip`: with `hidden`,
+    `scrollIntoView` scrolled the paper inside it instead of the page. The viewer fixes
+    docx-preview's off-centre asymmetric crops (`fixCrops`, transform-origin).
   - `src/xlsx/edit.ts` + `calc.ts` — spreadsheet editing (M6). `calc.ts` is our own formula
     engine (parser, ~120 common functions, reference shifting); it matched Excel on every
     formula of both sample workbooks. `edit.ts` keeps all sheets in memory, recalculates the

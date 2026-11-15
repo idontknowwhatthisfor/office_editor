@@ -107,6 +107,7 @@ async function renderPages(root: HTMLElement, data: ArrayBuffer): Promise<{ view
     const drawCharts = await prepareCharts(parsed, data);
     view.append(...(await renderDocument(parsed, options)));
     drawCharts(view);
+    fixCrops(view);
   } catch (e) {
     console.error('docx open failed', e);
     showMessage(root, t('docxInvalid'));
@@ -130,6 +131,26 @@ async function renderPages(root: HTMLElement, data: ArrayBuffer): Promise<{ view
   paginate(wrapper);
   numberPages(wrapper);
   return { view, wrapper };
+}
+
+/**
+ * docx-preview shows a cropped picture by clipping it and scaling it up about its centre, which
+ * puts it off by the difference when the left and right (or top and bottom) crops differ.
+ * Scaling about the point that stays put lines the kept part up with the picture's box.
+ */
+function fixCrops(view: HTMLElement): void {
+  for (const img of view.querySelectorAll<HTMLImageElement>('img')) {
+    const m = /rect\(([\d.]+)% ([\d.]+)% ([\d.]+)% ([\d.]+)%\)/.exec(img.style.clipPath);
+    if (!m || img.style.transform.includes('rotate')) continue;
+    const [top, right, bottom, left] = m.slice(1).map((v) => Number(v) / 100);
+    const l = left;
+    const r = 1 - right;
+    const t = top;
+    const b = 1 - bottom;
+    const ox = l + r > 0 ? (l / (l + r)) * 100 : 50;
+    const oy = t + b > 0 ? (t / (t + b)) * 100 : 50;
+    img.style.transformOrigin = `${ox}% ${oy}%`;
+  }
 }
 
 /** Waits for the fonts the rendered document `view` uses (it must be in the page). */
