@@ -99,6 +99,8 @@ class PdfViewer {
   private editor: PdfEditor;
   /** Some of the file's annotations are left off the pages (see hideAnnotations). */
   private hiding = false;
+  /** Pages whose form fields have been left off too (see hideFormFields). */
+  private fieldsHidden = new Set<number>();
 
   constructor(
     root: HTMLElement,
@@ -334,6 +336,7 @@ class PdfViewer {
     try {
       const proxy = await this.proxy(page);
       this.measure(page, proxy);
+      if (this.hiding && this.hasForms) await this.hideFormFields(page.index, proxy);
       const scale = this.targetScale(page);
       const viewport = proxy.getViewport({ scale });
       const canvas = document.createElement('canvas');
@@ -419,8 +422,27 @@ class PdfViewer {
   }
 
   private annotationMode(): number {
-    if (this.hasForms) return pdfjs.AnnotationMode.ENABLE_FORMS;
-    return this.hiding ? pdfjs.AnnotationMode.ENABLE_STORAGE : pdfjs.AnnotationMode.ENABLE;
+    if (this.hiding) return pdfjs.AnnotationMode.ENABLE_STORAGE;
+    return this.hasForms ? pdfjs.AnnotationMode.ENABLE_FORMS : pdfjs.AnnotationMode.ENABLE;
+  }
+
+  /**
+   * ENABLE_FORMS (form fields are inputs over the page, editor.ts) and ENABLE_STORAGE (hidden
+   * annotations) can't be combined. With both needed, a page is drawn with storage and its fields
+   * are hidden like the marks: the ones ENABLE_FORMS would leave out (not signatures, nor fields
+   * PDF.js draws itself).
+   */
+  private async hideFormFields(index: number, proxy: PDFPageProxy): Promise<void> {
+    if (this.fieldsHidden.has(index)) return;
+    this.fieldsHidden.add(index);
+    const annotations = (await proxy.getAnnotations({ intent: 'display' })) as {
+      id: string; subtype: string; fieldType?: string; noHTML?: boolean; hasOwnCanvas?: boolean;
+    }[];
+    const storage = this.pdf.annotationStorage;
+    for (const a of annotations) {
+      if (a.subtype !== 'Widget' || a.fieldType === 'Sig' || a.noHTML || a.hasOwnCanvas) continue;
+      storage.setValue(`pdfjs_internal_editor_officeeditor_${a.id}`, { deleted: true, id: a.id, pageIndex: index });
+    }
   }
 
   // ---- thumbnails ----
@@ -432,7 +454,8 @@ class PdfViewer {
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(viewport.width);
     canvas.height = Math.round(viewport.height);
-    // Leaving out the marks the editor draws instead, as the pages do.
+    // Leaving out the marks the editor draws instead, as the pages do (not in a form, whose
+    // fields thumbnails show as drawn by PDF.js).
     const mode = this.hiding && !this.hasForms ? pdfjs.AnnotationMode.ENABLE_STORAGE : pdfjs.AnnotationMode.ENABLE;
     await proxy.render({ canvas, viewport, annotationMode: mode }).promise;
     frame.append(canvas);

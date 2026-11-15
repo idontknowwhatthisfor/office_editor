@@ -43,9 +43,9 @@ Native Kotlin shell + bundled web viewers in a WebView (PRD §5.1).
     `marks.ts` reads the app's own saved annotations back when edit mode starts (named
     `/NM (OfficeEditor-…)`; older files by the exact keys the app writes), so they can be erased
     like new marks; PDF.js leaves them off the canvas via its annotation storage (`deleted`
-    entries, `ENABLE_STORAGE`). Untouched ones stay in the file as they are; erased ones are
-    removed with their appearances. Other apps' annotations, and files with form fields, are left
-    alone. The editor's panels, toast and dialogs live in
+    entries, `ENABLE_STORAGE`; in a form, which otherwise renders with `ENABLE_FORMS`, the
+    fields that mode leaves out are hidden the same way). Untouched ones stay in the file as they
+    are; erased ones are removed with their appearances. Other apps' annotations are left alone. The editor's panels, toast and dialogs live in
     `overlay.ts`'s layer, counter-scaled to the visible area like the bottom bar, so pinch-zoom
     doesn't magnify them. While a tool is on, the edit layer has `touch-action: pinch-zoom`: one
     finger uses the tool, two zoom and scroll (a mark begun < 300 ms before the second finger is

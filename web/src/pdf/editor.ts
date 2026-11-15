@@ -157,11 +157,10 @@ export class PdfEditor {
 
   /**
    * Makes the marks this app saved earlier editable again: they join the base list, drawn by the
-   * editor, and PDF.js stops drawing them into the page. Not in files with form fields, whose pages
-   * are rendered without PDF.js's annotation storage (the fields are inputs over the page).
+   * editor, and PDF.js stops drawing them into the page.
    */
   private async readSavedMarks(): Promise<void> {
-    if (this.marksRead || this.hasForms) return;
+    if (this.marksRead) return;
     this.marksRead = true;
     try {
       const { readMarks, refId } = await import('./marks');
