@@ -8,7 +8,7 @@ import { along, erasePart, eraseWhole, type Point } from './erase';
 import { openStylePanel, readStyle, saveStyle, type StyleTarget } from './style';
 import { TextBoxes, type TextEdit } from './textbox';
 
-// PDF editing (PRD M5): highlight and underline selected text, draw, add text, sign, rotate or
+// PDF editing: highlight and underline selected text, draw, add text, sign, rotate or
 // delete pages, and fill in forms. Edits stay in memory, drawn over the pages, until the user
 // saves; write.ts then puts them into the file.
 

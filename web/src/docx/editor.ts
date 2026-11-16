@@ -9,7 +9,7 @@ import { overlay } from '../overlay';
 import { PictureTool } from './pictures';
 import { fontsLoaded, GUTTER, scaleLineHeights } from './viewer';
 
-// Word editing (PRD M7), done in place on the file's own XML.
+// Word editing, done in place on the file's own XML.
 //
 // The document is shown for editing as docx-preview renders it, on paper of the document's own
 // size, scaled as a whole to the screen width so it looks as it does in the viewer (the pages

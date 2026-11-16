@@ -103,7 +103,7 @@ def para(content: str, props: str = "") -> str:
 
 
 def make_docx(path: Path) -> None:
-    """A Word document with the features the viewer must show (PRD 4.2 P0): headings, bold /
+    """A Word document with the features the viewer must show: headings, bold /
     italic / underline, bullet and numbered lists (nested), a table, an image and a link."""
     def item(text: str, num_id: int, level: int = 0) -> str:
         return para(run(text), f'<w:numPr><w:ilvl w:val="{level}"/><w:numId w:val="{num_id}"/></w:numPr>')

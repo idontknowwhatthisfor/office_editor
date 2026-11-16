@@ -4,7 +4,7 @@ import { isDateFormat } from './format';
 import { shiftFormula } from './formula';
 import { decodeCol, defaultRowPt, encodeCol, ptToPx, Workbook, type Cell, type Range, type Sheet } from './workbook';
 
-// Spreadsheet editing (PRD M6): cell values and formulas (recalculated, with everything that
+// Spreadsheet editing: cell values and formulas (recalculated, with everything that
 // depends on them), inserting and deleting rows and columns, undo/redo, and saving back into
 // the file's own XML.
 //
