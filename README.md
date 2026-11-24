@@ -4,19 +4,20 @@ A free, offline Android viewer and editor for PDF, Word (`.docx`), Excel (`.xlsx
 (`.pptx`) files. No account, no ads, no analytics, and no `INTERNET` permission: files never leave
 the device.
 
-Current version: 1.2.4 (version code 8). Application id: `com.officeeditor`.
+Current version: 1.3.1 (version code 10). Application id: `com.officeeditor`.
 
 ## What it does
 
 | Format | View | Edit |
 | --- | --- | --- |
-| PDF | Pages, pinch-zoom, text selection, search, thumbnails | Highlight, underline, pen, text boxes, signature, eraser, form filling, rotate/delete pages |
+| PDF | Pages, pinch-zoom, text selection, search, thumbnails | Highlight, underline, pen, text boxes, signature (move, resize), eraser, form filling, rotate/delete pages |
 | Word | Fixed page layout as in Word, search, thumbnails, charts | Text, bold/italic/underline, colours, font size, alignment, headings, lists, pictures |
 | Excel | Grid with styles, frozen panes, sheet tabs, charts | Cell values and formulas (recalculated), insert/delete rows and columns, font size |
 | PowerPoint | Slides, thumbnails, Present mode, charts | Text in boxes and placeholders, move and resize shapes |
 
-Also: new blank document or spreadsheet, "Open with" and share-to from other apps, recent files,
-Export as PDF (Word, Excel, PowerPoint), English and Indonesian.
+Also: a tap on a PDF, Word or PowerPoint page slides the bars away for reading; new blank
+document or spreadsheet, "Open with" and share-to from other apps, recent files, Export as PDF
+(Word, Excel, PowerPoint), English and Indonesian.
 
 ## Tech stack
 
@@ -30,10 +31,13 @@ Export as PDF (Word, Excel, PowerPoint), English and Indonesian.
 
 ```
 MainActivity (home) ──► ViewerActivity ──► WebView
-                          │  top bar,        │  https://appassets.androidplatform.net/
-                          │  Save dialog,    │    assets/web/index.html   (the web app)
-                          │  print, share    │    doc/current             (the document's bytes)
-                          └── OfficeBridge ◄─┘  metadata, dirty flag, save chunks, print, present
+                          │  top bar, PDF/   │  https://appassets.androidplatform.net/
+                          │  Word bottom bar │    assets/web/index.html   (the web app)
+                          │  and toolbars,   │    doc/current             (the document's bytes)
+                          │  Save dialog,    │
+                          │  print, share    │
+                          └── OfficeBridge ◄─┘  metadata, dirty flag, save chunks, print, present,
+                                                bar and toolbar state, hide bars
 ```
 
 - The page asks the bridge which document is open, then `fetch()`es its bytes from a URL the app
@@ -42,6 +46,10 @@ MainActivity (home) ──► ViewerActivity ──► WebView
   leave untouched parts as they are.
 - On Save the editor builds the file, re-reads it, and streams it to the shell, which writes a
   temporary file, checks it, and only then replaces the original (with a backup) or saves a copy.
+- The PDF and Word bottom bar and editing toolbars are drawn by the shell over the WebView, from
+  state the page sends: a page element can only follow a pinch-zoomed view a frame late, so it
+  lagged behind fast pans. The top bar floats over PDF, Word and PowerPoint pages, so hiding
+  the bars never resizes the page.
 
 ## Directory map
 

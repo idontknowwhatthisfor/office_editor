@@ -9,7 +9,7 @@ XML. Loaded as its own chunk by [`../main.ts`](../main.ts).
 
 | File | What it does |
 | --- | --- |
-| `viewer.ts` | `openDocx()`: renders with docx-preview, paginates, fixes line spacing, fills page numbers, scales pages to the screen, adds the bottom bar. `printDocx()` lays the pages out for Export as PDF. Also exports `fontsLoaded`, `scaleLineHeights`, `GUTTER` for the editor. |
+| `viewer.ts` | `openDocx()`: renders with docx-preview, paginates, fixes line spacing, fills page numbers, scales pages to the screen, adds the bottom bar (drawn by the shell in the app) and a tap to hide the bars (`../immersive.ts`). `printDocx()` lays the pages out for Export as PDF. Also exports `fontsLoaded`, `scaleLineHeights`, `GUTTER` for the editor. |
 | `paginate.ts` | `paginate()`: splits docx-preview's output into real pages (paragraphs between lines, tables between rows). |
 | `search.ts` | `DocxSearch`: finds text and highlights it with the CSS Custom Highlight API, leaving the markup alone. |
 | `charts.ts` | `prepareCharts()`: matches docx-preview's empty chart boxes to the document's XML and draws the charts with [`../chart/`](../chart/README.md). |

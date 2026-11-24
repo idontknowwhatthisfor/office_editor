@@ -9,7 +9,7 @@ pages. Loaded as its own chunk by [`../main.ts`](../main.ts) when the open docum
 
 | File | What it does |
 | --- | --- |
-| `viewer.ts` | `openPdf()`: renders pages lazily on canvases (capped per page to limit memory), text layer for selection, the bottom bar, and starts `PdfEditor`. Reads the file from its URL in ranges. |
+| `viewer.ts` | `openPdf()`: renders pages lazily on canvases (capped per page to limit memory), text layer for selection, the bottom bar (drawn by the shell in the app), a tap to hide the bars (`../immersive.ts`), and starts `PdfEditor`. Reads the file from its URL in ranges. |
 | `search.ts` | `PdfSearch`: finds text across pages and highlights matches in the text layer. |
 | `editor.ts` | `PdfEditor`: edit mode. Tools (highlight, underline, pen, text, signature, eraser), form inputs over the page, page rotate/delete, undo/redo, and saving via `write.ts`. |
 | `edits.ts` | The edit model (`Edit`, `Style`, `PageSpace`) in PDF page space (points, y up, unrotated), and `editSvg()`, which draws an edit as the on-screen SVG overlay. |

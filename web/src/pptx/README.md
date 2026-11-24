@@ -16,7 +16,7 @@ by [`../main.ts`](../main.ts).
 | `geometry.ts` | Shape outlines as SVG path data: preset shapes (`presetOutline`) and custom geometry (`customOutline`). Unknown presets fall back to a rectangle. |
 | `text.ts` | Text bodies: merges paragraph/run styles down the inheritance chain and renders them (`renderText`). `fontFamily()` maps theme fonts. |
 | `table.ts` | `renderTable()`: tables and their styles. Built-in styles other than the default are drawn as "Medium Style 2 – Accent 1". |
-| `viewer.ts` | `openPptx()`: one slide per screen with scroll-snap, thumbnails, own pinch/double-tap zoom, Present mode. `printPptx()` centres slides on landscape A4. |
+| `viewer.ts` | `openPptx()`: one slide per screen with scroll-snap, thumbnails, own pinch/double-tap zoom, Present mode, a single tap to hide the bars (`../immersive.ts`; a double tap still zooms). `printPptx()` centres slides on landscape A4. |
 | `editor.ts` | `PptxEditor`: text editing in text boxes and placeholders, bold/italic/underline, alignment, font size, autofit, undo/redo, save. |
 | `shapes.ts` | `ShapeTool`: select a top-level element, move it, resize it with handles. Writes `off`/`ext`. |
 | `pptx.css` | Styles for the viewer, slide markup and editor. |
