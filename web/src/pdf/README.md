@@ -16,7 +16,7 @@ pages. Loaded as its own chunk by [`../main.ts`](../main.ts) when the open docum
 | `write.ts` | `writeEdits()`: writes edits into the file with pdf-lib. Also page operations and form values. Throws `EncryptedPdfError` for encrypted files. |
 | `marks.ts` | `readMarks()`: reads the app's own saved annotations back into `Edit`s so they can be erased or changed again. |
 | `erase.ts` | The two erasers in PDF space: `eraseWhole` (whole marks; one line of a highlight) and `erasePart` (cuts pen strokes). |
-| `textbox.ts` | `TextBoxes`: select a text box the app placed, then move, scale, retype, recolour or delete it. |
+| `textbox.ts` | `TextBoxes`: select a text box the app placed, then move, scale, retype, recolour or delete it; or a signature not yet saved (selected as soon as it is placed), then move, resize (shape kept, the opposite corner fixed) or delete it. A saved signature is part of the page and can't be selected. |
 | `style.ts` | `openStylePanel()`: a tool's settings panel (colour grid / HSV sliders / eyedropper, opacity, pen thickness, eraser mode and size). Settings are kept in localStorage. Also used by the Word editor. |
 | `pdf.css` | Styles for the pages, edit layer and edit bar. |
 | `style.css` | Styles for the settings panel. |

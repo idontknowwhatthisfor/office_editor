@@ -4,14 +4,18 @@ import { topInset } from '../immersive';
 import { DEFAULT_STYLE, type Edit, type PageSpace, type Rgb } from './edits';
 import { openStylePanel } from './style';
 
-// Text boxes the app placed, new or saved earlier (marks.ts reads those back): a tap selects one.
-// The selected box gets a frame in the overlay layer (screen coordinates, not zoomed with the
-// page): dragging the frame moves the box, its corner handle scales the text (the font size),
-// and a bar above it edits the text, changes its colour or deletes it. Tapping the selected box
-// again edits its text. Every change is one step (the editor's `replace` operation), drawn live
-// while the finger moves.
+// Text boxes the app placed, new or saved earlier (marks.ts reads those back), and signatures not
+// yet saved (saving draws them into the page): a tap selects one. The selected box gets a frame
+// in the overlay layer (screen coordinates, not zoomed with the page): dragging the frame moves
+// it, and its corner handle scales it: a text box's font size, or a signature's size (its shape
+// kept, the opposite corner staying put). A bar above it edits the text, changes its colour or
+// deletes it (a signature's bar only deletes). Tapping a selected text box again edits its text.
+// Every change is one step (the editor's `replace` operation), drawn live while the finger moves.
 
 export type TextEdit = Extract<Edit, { kind: 'text' }>;
+export type ImageEdit = Extract<Edit, { kind: 'image' }>;
+/** What can be selected: a text box or a signature. */
+export type BoxEdit = TextEdit | ImageEdit;
 
 export interface TextBoxHost {
   page(index: number): { el: HTMLElement; overlay: SVGSVGElement; space: PageSpace } | undefined;
@@ -20,7 +24,7 @@ export interface TextBoxHost {
   /** Draws the page with `from` shown as `to` (nothing is recorded). */
   preview(page: number, from: Edit, to: Edit): void;
   /** Records the change as one undo step; `to` null deletes the box. */
-  commit(from: TextEdit, to: TextEdit | null): void;
+  commit(from: BoxEdit, to: BoxEdit | null): void;
   /** Asks for new text and size; empty text means delete. */
   editText(edit: TextEdit): Promise<{ text: string; size: number } | null>;
   /** Closes a tool's settings panel, if one is open. */
@@ -29,6 +33,8 @@ export interface TextBoxHost {
 
 const MIN_SIZE = 1;
 const MAX_SIZE = 400;
+/** A signature's width, in PDF points: at least this, and at most twice the page's width. */
+const MIN_IMAGE = 12;
 /** How far (CSS px) a finger may move and still be a tap. */
 const SLOP = 8;
 /** Room around the text, in screen px: the frame and the area a tap selects it from. */
@@ -39,15 +45,16 @@ export class TextBoxes {
   private frame = el('div', 'pdf-tb-frame');
   private handle = el('div', 'pdf-tb-handle');
   private bar = el('div', 'pdf-tb-bar');
-  private selected: TextEdit | null = null;
+  private selected: BoxEdit | null = null;
+  private textTools: HTMLButtonElement[];
   private drag: {
     kind: 'move' | 'size';
     pointer: number;
     x0: number;
     y0: number;
     started: boolean;
-    from: TextEdit;
-    now: TextEdit;
+    from: BoxEdit;
+    now: BoxEdit;
   } | null = null;
   /** While the colour panel is open, the box it is changing. */
   private colouring: TextEdit | null = null;
@@ -55,11 +62,11 @@ export class TextBoxes {
   constructor(private host: TextBoxHost) {
     this.frame.append(this.handle);
     this.layer.append(this.frame, this.bar);
-    this.bar.append(
+    this.textTools = [
       barButton(ICON_EDIT, t('editText'), () => void this.edit()),
       barButton(ICON_COLOUR, t('boxColour'), () => this.colour()),
-      barButton(ICON_DELETE, t('deleteText'), () => this.remove()),
-    );
+    ];
+    this.bar.append(...this.textTools, barButton(ICON_DELETE, t('deleteText'), () => this.remove()));
     this.frame.addEventListener('pointerdown', (e) => this.down(e, 'move'));
     this.handle.addEventListener('pointerdown', (e) => this.down(e, 'size'));
     for (const target of [this.frame, this.handle]) {
@@ -79,8 +86,8 @@ export class TextBoxes {
     return !!this.selected;
   }
 
-  /** The topmost text box under a point on a page (client coordinates), if any. */
-  hit(page: number, x: number, y: number): TextEdit | null {
+  /** The topmost text box or signature under a point on a page (client coordinates), if any. */
+  hit(page: number, x: number, y: number): BoxEdit | null {
     const state = this.host.page(page);
     if (!state) return null;
     const edits = this.host.edits(page);
@@ -88,15 +95,16 @@ export class TextBoxes {
     const pad = PAD / scale;
     for (let i = edits.length - 1; i >= 0; i--) {
       const edit = edits[i];
-      if (edit.kind !== 'text') continue;
+      if (edit.kind !== 'text' && edit.kind !== 'image') continue;
       const r = state.overlay.children[i]?.getBoundingClientRect();
       if (r && x > r.left - pad && x < r.right + pad && y > r.top - pad && y < r.bottom + pad) return edit;
     }
     return null;
   }
 
-  select(edit: TextEdit): void {
+  select(edit: BoxEdit): void {
     this.selected = edit;
+    for (const b of this.textTools) b.hidden = edit.kind !== 'text';
     (document.activeElement as HTMLElement | null)?.blur?.();
     getSelection()?.removeAllRanges();
     if (!this.layer.isConnected) overlay().append(this.layer);
@@ -112,7 +120,7 @@ export class TextBoxes {
 
   /** Undo or redo turned the selected box `from` into `to`: the selection goes with it. */
   follow(from: Edit, to: Edit): void {
-    if (this.selected === from && to.kind === 'text') this.selected = to;
+    if (this.selected === from && (to.kind === 'text' || to.kind === 'image')) this.selected = to;
   }
 
   /** The edits changed (a step, undo, redo): keep the frame on the box, or drop it if it went. */
@@ -125,12 +133,15 @@ export class TextBoxes {
 
   // ---------------------------------------------------------------- placing the controls
 
-  /** The point the text hangs from, (x, y) of the edit, in client coordinates. */
-  private anchor(edit: TextEdit): [number, number] | null {
+  /**
+   * The point that stays put while the box is scaled, in client coordinates: where a text box's
+   * text hangs from ((x, y) of the edit), or a signature's top left corner on screen.
+   */
+  private anchor(edit: BoxEdit): [number, number] | null {
     const state = this.host.page(edit.page);
     if (!state) return null;
     const box = state.overlay.getBoundingClientRect();
-    const [vx, vy] = state.space.toView(edit.x, edit.y);
+    const [vx, vy] = edit.kind === 'text' ? state.space.toView(edit.x, edit.y) : imageView(edit, state.space);
     const k = box.width / state.space.width;
     return [box.left + vx * k, box.top + vy * k];
   }
@@ -209,8 +220,18 @@ export class TextBoxes {
       const a = this.anchor(from);
       if (!a) return;
       const ratio = Math.hypot(e.clientX - a[0], e.clientY - a[1]) / Math.max(1, Math.hypot(d.x0 - a[0], d.y0 - a[1]));
-      const size = Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(from.size * ratio * 2) / 2));
-      d.now = { ...from, size };
+      if (from.kind === 'text') {
+        const size = Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(from.size * ratio * 2) / 2));
+        d.now = { ...from, size };
+      } else {
+        // The same shape, from the same top left corner on screen.
+        const w = Math.min(state.space.width * 2, Math.max(MIN_IMAGE, from.w * ratio));
+        const h = (from.h / from.w) * w;
+        const [left, top] = imageView(from, state.space);
+        const p = state.space.toPdf(left, top);
+        const q = state.space.toPdf(left + w, top + h);
+        d.now = { ...from, x: Math.min(p[0], q[0]), y: Math.min(p[1], q[1]), w, h };
+      }
     }
     this.host.preview(from.page, from, d.now);
     this.place();
@@ -223,11 +244,11 @@ export class TextBoxes {
     this.frame.classList.remove('dragging');
     this.bar.hidden = false;
     if (!d.started) {
-      // A tap on the selected box: edit its text.
-      if (!cancelled && d.kind === 'move') void this.edit();
+      // A tap on the selected text box: edit its text.
+      if (!cancelled && d.kind === 'move' && d.from.kind === 'text') void this.edit();
       return;
     }
-    const changed = d.now.x !== d.from.x || d.now.y !== d.from.y || d.now.size !== d.from.size;
+    const changed = JSON.stringify({ ...d.now, png: 0 }) !== JSON.stringify({ ...d.from, png: 0 });
     if (cancelled || !changed) {
       this.host.preview(d.from.page, d.from, d.from);
       this.place();
@@ -241,7 +262,7 @@ export class TextBoxes {
 
   private async edit(): Promise<void> {
     const sel = this.selected;
-    if (!sel) return;
+    if (sel?.kind !== 'text') return;
     this.host.closePanels();
     const result = await this.host.editText(sel);
     if (!result || this.selected !== sel) return;
@@ -258,7 +279,7 @@ export class TextBoxes {
   /** The colour panel; the box shows each colour at once, and the change is one step. */
   private colour(): void {
     const from = this.selected;
-    if (!from) return;
+    if (from?.kind !== 'text') return;
     this.host.closePanels();
     const style = structuredClone(DEFAULT_STYLE);
     style.text.colour = [...from.colour] as Rgb;
@@ -292,6 +313,14 @@ export class TextBoxes {
     this.clear();
     this.host.commit(sel, null);
   }
+}
+
+/** A signature's top left corner on the page's view (unzoomed CSS px), as editSvg draws it. */
+function imageView(edit: ImageEdit, space: PageSpace): [number, number] {
+  const vertical = space.rotation % 180 !== 0;
+  const a = space.toView(edit.x, edit.y);
+  const b = space.toView(edit.x + (vertical ? edit.h : edit.w), edit.y + (vertical ? edit.w : edit.h));
+  return [Math.min(a[0], b[0]), Math.min(a[1], b[1])];
 }
 
 /** Client coordinates (the layout viewport) → the overlay's: the visible area at normal size. */

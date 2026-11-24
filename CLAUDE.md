@@ -48,7 +48,10 @@ Native Kotlin shell + bundled web viewers in a WebView.
     app placed, new or saved, selects it: drag its frame to move, the corner handle scales the
     font size, its bar edits the text (also a second tap), colour or deletes; each is one
     `replace` op (undo follows the selection), and on save a changed saved box is removed and
-    written again. PDF.js leaves them off the canvas via its annotation storage (`deleted`
+    written again. A signature not yet saved is selected the same way (and right after it is
+    placed): drag to move, the corner handle resizes it keeping its shape (the top-left corner
+    on screen stays), its bar only deletes; saving draws it into the page, so it can't be
+    selected after that. PDF.js leaves them off the canvas via its annotation storage (`deleted`
     entries, `ENABLE_STORAGE`; in a form, which otherwise renders with `ENABLE_FORMS`, the
     fields that mode leaves out are hidden the same way). Untouched ones stay in the file as they
     are; erased ones are removed with their appearances. Other apps' annotations are left alone. The editor's panels, toast and dialogs live in

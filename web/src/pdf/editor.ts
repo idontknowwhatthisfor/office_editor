@@ -216,7 +216,8 @@ export class PdfEditor {
     const state: PageState = { el: pageEl, space, overlay };
     this.pages.set(index, state);
     this.listenDrawing(index, state);
-    // With no tool on, a tap on a text box the app placed selects it; elsewhere, lets it go.
+    // With no tool on, a tap on a text box the app placed, or on a signature not yet saved,
+    // selects it; elsewhere, lets it go.
     pageEl.addEventListener('click', (e) => {
       if (!this.active || this.tool !== 'none') return;
       const hit = this.boxes.hit(index, e.clientX, e.clientY);
@@ -635,11 +636,12 @@ export class PdfEditor {
     // Centred on the tap; store the PDF-space corner nearest the origin.
     const a = state.space.toPdf(vx - w / 2, vy - h / 2);
     const b = state.space.toPdf(vx + w / 2, vy + h / 2);
-    this.push({
-      kind: 'edit',
-      edit: { kind: 'image', page: index, x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w, h, png: sig.png, url: sig.url },
-    });
+    const edit: Edit = { kind: 'image', page: index, x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w, h, png: sig.png, url: sig.url };
+    this.push({ kind: 'edit', edit });
     this.setTool('none');
+    // Ready to be moved or resized (textbox.ts).
+    this.boxes.select(edit);
+    this.say(t('signatureHint'));
   }
 
   private pageMenu(): void {

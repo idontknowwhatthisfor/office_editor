@@ -380,6 +380,10 @@ body.pdf-drawing .pdf-edit-layer {
   white-space: nowrap;
 }
 
+.pdf-tb-tool[hidden] {
+  display: none;
+}
+
 .pdf-tb-tool:active {
   background: var(--border);
 }
