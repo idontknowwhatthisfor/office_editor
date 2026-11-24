@@ -17,7 +17,8 @@ Native Kotlin shell + bundled web viewers in a WebView.
     `EXTRA_START_EDITING` (passed to the page as `edit` in `getDocument()`; a Word file then opens
     in edit mode).
   - `ViewerActivity` — one document; also the target of "Open with" (`ACTION_VIEW`) and share-to
-    (`ACTION_SEND`). Top bar is native; everything below it is the WebView.
+    (`ACTION_SEND`). Top bar is native, and so is the PDF/Word bottom bar (`PageBar.kt`); the
+    rest is the WebView.
   - `DocumentWebView.kt` — WebView setup and the JS bridge (`window.OfficeBridge`).
   - `AboutActivity` — About & licences (ⓘ on the home screen): version, privacy note, and every
     bundled component's licence text, read from `assets/web/licences.json`. That file is built
@@ -116,7 +117,17 @@ Native Kotlin shell + bundled web viewers in a WebView.
     PowerPoint box changes all its text) and write `w:sz`/`w:szCs` (half-points, rPr in schema
     order) or `a:rPr sz` (1/100 pt); Excel adds a font and a cellXfs entry per (base format,
     size) to styles.xml and raises row heights; PDF text boxes take a size in points.
-  - `src/pagebar.ts` — the bottom bar shared by the PDF and Word viewers.
+  - `src/pagebar.ts` — the bottom bar shared by the PDF and Word viewers. In the app its main
+    and search rows are native (`PageBar.kt`, over the bottom of the WebView): a page element
+    pinned to the visible area while pinch-zoomed follows the view a frame late, so it lagged
+    behind fast pans. The page reports page/search state with `OfficeBridge.setPageBar` and gets
+    taps back through `window.officePageBar`; thumbnails and edit toolbars stay in the page.
+  - `src/immersive.ts` — a single tap on a PDF, Word or PowerPoint page (viewing, not editing)
+    slides the bottom bar down and, via `OfficeBridge.setBarsHidden`, the shell's top bar up and
+    hides the status bar; the next tap brings them back. In these viewers the top bar floats over
+    the WebView (so the page never resizes); the page keeps room for it with `--oe-top` (CSS px,
+    from `getTopInset` / `window.officeSetTopInset`). Anything pinned near the top of the screen
+    must allow for `topInset()`. Excel keeps the top bar above the page.
   - `src/print.ts` — "Export as PDF" (⋮ menu, Word/Excel/PowerPoint). The shell loads the saved
     file a second time in a hidden WebView with `print` set (`Printing.kt`); the page lays it
     out for paper (`printDocx`: the paginated pages; `printXlsx`: each sheet's used range on A4,

@@ -15,6 +15,18 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.clipToBounds
+import org.json.JSONObject
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -83,6 +95,12 @@ class ViewerActivity : ComponentActivity(), EditorHost {
     private var menuOpen by mutableStateOf(false)
     /** A presentation is shown full screen: no top bar, no system bars, landscape. */
     private var fullScreen by mutableStateOf(false)
+    /** A tap on the document hid the bars: no top bar and no status bar, only the document. */
+    private var hideBars by mutableStateOf(false)
+    /** Room the page keeps at its top for the floating top bar, in CSS px (dp). */
+    @Volatile private var topInsetDp = 0f
+    /** The PDF and Word viewers' bottom bar, drawn here (PageBar.kt); null until the page sends it. */
+    private var pageBar by mutableStateOf<PageBarState?>(null)
     /** Leave the screen once the save in progress succeeds (the user chose Save on leaving). */
     private var closeAfterSave = false
     private var pendingCopy: File? = null
@@ -134,54 +152,77 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                 // the top bar steps aside until the keyboard closes.
                 val typingSideways = LocalConfiguration.current.screenHeightDp < 480 && WindowInsets.isImeVisible
                 val noInsets = WindowInsets(0, 0, 0, 0)
+                val short = LocalConfiguration.current.screenHeightDp < 480
+                // PDF, Word and PowerPoint: the top bar floats over the page and slides away on a
+                // tap (immersive.ts), so the page never changes size (which made it jump). The page
+                // keeps room for the bar itself (officeSetTopInset). Excel lays out below the bar.
+                val floating = webView != null && doc?.format != DocFormat.XLSX
+                // A floating bar keeps the status bar's room even while a tap has hidden the status
+                // bar, so its height (and the page's room for it) stays the same.
+                val topInsets = if (floating && !short) {
+                    WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.safeDrawing)
+                        .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
+                } else {
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
+                }
+                val topBar: @androidx.compose.runtime.Composable (Modifier) -> Unit = { modifier ->
+                    TopAppBar(
+                        modifier = modifier,
+                        title = {
+                            Text(
+                                doc?.name ?: stringResource(R.string.app_name),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        expandedHeight = appBarHeight(),
+                        windowInsets = topInsets,
+                        navigationIcon = {
+                            IconButton(onClick = { finish() }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
+                            }
+                        },
+                        actions = {
+                            if (saving || exporting) {
+                                CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp)
+                            } else if (unsaved) {
+                                TextButton(onClick = { dialog = Dialog.SAVE }) { Text(stringResource(R.string.save)) }
+                            }
+                            if (doc != null && error == null) {
+                                IconButton(onClick = { share(doc) }) {
+                                    Icon(Icons.Filled.Share, stringResource(R.string.share))
+                                }
+                            }
+                            if (doc != null && error == null && doc.format != DocFormat.PDF) {
+                                Box {
+                                    IconButton(onClick = { menuOpen = true }) {
+                                        Icon(Icons.Filled.MoreVert, stringResource(R.string.more_options))
+                                    }
+                                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.export_pdf)) },
+                                            enabled = !saving && !exporting,
+                                            onClick = {
+                                                menuOpen = false
+                                                exportPdf(doc)
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
+                val showTopBar = !typingSideways && !fullScreen
+                var topBarPx by remember { mutableIntStateOf(0) }
+                val density = LocalDensity.current.density
+                val topInset = if (floating && showTopBar) topBarPx / density else 0f
+                LaunchedEffect(topInset) {
+                    topInsetDp = topInset
+                    webView?.evaluateJavascript("window.officeSetTopInset && window.officeSetTopInset($topInset)", null)
+                }
                 Scaffold(
-                    topBar = {
-                        if (!typingSideways && !fullScreen) TopAppBar(
-                            title = {
-                                Text(
-                                    doc?.name ?: stringResource(R.string.app_name),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                            expandedHeight = appBarHeight(),
-                            windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
-                            navigationIcon = {
-                                IconButton(onClick = { finish() }) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
-                                }
-                            },
-                            actions = {
-                                if (saving || exporting) {
-                                    CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp)
-                                } else if (unsaved) {
-                                    TextButton(onClick = { dialog = Dialog.SAVE }) { Text(stringResource(R.string.save)) }
-                                }
-                                if (doc != null && error == null) {
-                                    IconButton(onClick = { share(doc) }) {
-                                        Icon(Icons.Filled.Share, stringResource(R.string.share))
-                                    }
-                                }
-                                if (doc != null && error == null && doc.format != DocFormat.PDF) {
-                                    Box {
-                                        IconButton(onClick = { menuOpen = true }) {
-                                            Icon(Icons.Filled.MoreVert, stringResource(R.string.more_options))
-                                        }
-                                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.export_pdf)) },
-                                                enabled = !saving && !exporting,
-                                                onClick = {
-                                                    menuOpen = false
-                                                    exportPdf(doc)
-                                                },
-                                            )
-                                        }
-                                    }
-                                }
-                            },
-                        )
-                    },
+                    topBar = { if (!floating && showTopBar) topBar(Modifier) },
                     // The web page lays out above the navigation bar and the keyboard.
                     // (Dialogs are drawn after the content, below.)
                     // (safeDrawing: navigation bar, keyboard, and a camera cutout at the side when
@@ -190,10 +231,30 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                 ) { padding ->
                     val view = webView
                     if (view != null) {
-                        Box(Modifier.fillMaxSize().padding(padding)) {
-                            // The print layout renders underneath, out of sight.
-                            printView?.let { print -> key(print) { AndroidView(factory = { print }, modifier = Modifier.fillMaxSize()) } }
-                            AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
+                        Box(Modifier.fillMaxSize()) {
+                            Box(Modifier.fillMaxSize().padding(padding).clipToBounds()) {
+                                // The print layout renders underneath, out of sight.
+                                printView?.let { print -> key(print) { AndroidView(factory = { print }, modifier = Modifier.fillMaxSize()) } }
+                                AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
+                                // Floats over the bottom of the page, above the keyboard and the
+                                // navigation bar; slides down with the top bar on a tap.
+                                val bar = pageBar
+                                if (floating && bar != null) AnimatedVisibility(
+                                    visible = bar.shown && !hideBars && !fullScreen,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    enter = slideInVertically(tween(BAR_SLIDE_MS)) { it },
+                                    exit = slideOutVertically(tween(BAR_SLIDE_MS)) { it },
+                                ) {
+                                    PageBar(bar, ::pageBarAction)
+                                }
+                            }
+                            if (floating) AnimatedVisibility(
+                                visible = showTopBar && !hideBars,
+                                enter = slideInVertically(tween(BAR_SLIDE_MS)) { -it },
+                                exit = slideOutVertically(tween(BAR_SLIDE_MS)) { -it },
+                            ) {
+                                topBar(Modifier.onSizeChanged { topBarPx = it.height })
+                            }
                         }
                     } else {
                         Column(
@@ -229,13 +290,13 @@ class ViewerActivity : ComponentActivity(), EditorHost {
     @androidx.compose.runtime.Composable
     private fun StatusBarOnTallScreens() {
         val short = LocalConfiguration.current.screenHeightDp < 480
-        LaunchedEffect(short, fullScreen) {
+        LaunchedEffect(short, fullScreen, hideBars) {
             val bars = WindowCompat.getInsetsController(window, window.decorView)
             bars.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             if (fullScreen) bars.hide(WindowInsetsCompat.Type.systemBars())
             else {
                 bars.show(WindowInsetsCompat.Type.navigationBars())
-                if (short) bars.hide(WindowInsetsCompat.Type.statusBars()) else bars.show(WindowInsetsCompat.Type.statusBars())
+                if (short || hideBars) bars.hide(WindowInsetsCompat.Type.statusBars()) else bars.show(WindowInsetsCompat.Type.statusBars())
             }
         }
     }
@@ -297,6 +358,27 @@ class ViewerActivity : ComponentActivity(), EditorHost {
             // Slides are wide: present in landscape (either way up), then give the phone back.
             requestedOrientation = if (on) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
+    }
+
+    override fun topInset(): Float = topInsetDp
+
+    override fun setPageBar(json: String) {
+        val state = PageBarState.parse(json) ?: return
+        runOnUiThread { pageBar = state }
+    }
+
+    /** A tap on the native bottom bar, passed on to the page (pagebar.ts). */
+    private fun pageBarAction(action: String, arg: Any?) {
+        val value = when (arg) {
+            null -> "undefined"
+            is String -> JSONObject.quote(arg)
+            else -> arg.toString()
+        }
+        webView?.evaluateJavascript("window.officePageBar && window.officePageBar(${JSONObject.quote(action)}, $value)", null)
+    }
+
+    override fun setBarsHidden(on: Boolean) {
+        runOnUiThread { hideBars = on }
     }
 
     private fun startSave(mode: String) {
@@ -453,6 +535,8 @@ class ViewerActivity : ComponentActivity(), EditorHost {
     }
 
     companion object {
+        /** How long the top bar takes to slide away or back; the page's bars match it (immersive.ts). */
+        private const val BAR_SLIDE_MS = 200
         /** Path of a private copy kept by [RecentFiles], used instead of intent data. */
         const val EXTRA_OWN_COPY = "com.officeeditor.OWN_COPY"
         /** Open straight into edit mode (a new blank document). */

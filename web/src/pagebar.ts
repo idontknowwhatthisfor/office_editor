@@ -26,9 +26,28 @@ export interface SearchState {
 
 export const THUMB_WIDTH = 72;
 
+/** What the app's own bottom bar shows (`OfficeBridge.setPageBar`). Pages are 0-based. */
+export interface NativeBarState {
+  page: number;
+  count: number;
+  query: string;
+  current: number;
+  total: number;
+  searching: boolean;
+  /** False while the page shows a row of its own (an edit toolbar), or no bar at all. */
+  shown: boolean;
+}
+
 /**
  * The bottom bar of the paged viewers: page indicator and thumbnails, search, edit. It stays on
  * the glass while the page is pinch-zoomed.
+ *
+ * In the app the main row and the search row are drawn by the shell instead (a native bar over
+ * the WebView, `PageBar.kt`): a page element pinned to the visible area while zoomed can only
+ * follow the page a frame late, so it lagged behind fast pans. The page tells the shell what to
+ * show (`setPageBar`) and the shell sends taps back (`window.officePageBar`). The main row stays
+ * here as an invisible spacer, so the thumbnails open above the native bar; the page's own rows
+ * (the PDF edit toolbar) are still shown here.
  */
 export class PageBar {
   readonly el = el('div', 'pagebar');
@@ -40,8 +59,11 @@ export class PageBar {
   private searchInput = el('input', 'pagebar-search-input');
   private searchCount = el('span', 'pagebar-search-count');
   private current = 0;
+  private readonly native = !!window.OfficeBridge?.setPageBar;
+  private nativeState: NativeBarState;
 
   constructor(private host: PageBarHost, extraRows: HTMLElement[] = []) {
+    this.nativeState = { page: 0, count: host.pageCount, query: '', current: -1, total: 0, searching: false, shown: true };
     const pagesButton = iconButton(ICON_PAGES, t('pages'));
     const searchButton = iconButton(ICON_SEARCH, t('search'));
     const editButton = iconButton(ICON_EDIT, t('edit'));
@@ -89,12 +111,43 @@ export class PageBar {
 
     this.el.append(this.thumbsEl, this.main, searchRow, ...extraRows);
     this.pinToViewport();
+
+    if (this.native) {
+      this.main.replaceChildren();
+      this.main.classList.add('pagebar-spacer');
+      this.el.classList.add('see-through');
+      window.officePageBar = (action, arg) => {
+        if (action === 'pages') toggleThumbs();
+        else if (action === 'find') host.find(String(arg ?? ''));
+        else if (action === 'step') host.step(arg === -1 ? -1 : 1);
+        else if (action === 'clear') host.clearSearch();
+        else if (action === 'edit') host.edit();
+      };
+      this.report();
+    }
+  }
+
+  /** The page no longer shows this bar (the Word editor took over the screen). */
+  detach(): void {
+    if (window.officePageBar && this.native) window.officePageBar = undefined;
+    this.report({ shown: false });
+  }
+
+  private report(change: Partial<NativeBarState> = {}): void {
+    if (!this.native) return;
+    Object.assign(this.nativeState, change);
+    window.OfficeBridge?.setPageBar?.(JSON.stringify(this.nativeState));
   }
 
   /** Shows one row of the bar (the main row, or a host's own such as an edit toolbar). */
   showRow(row: HTMLElement): void {
     this.thumbsEl.classList.remove('open');
     for (const r of this.el.querySelectorAll<HTMLElement>(':scope > .pagebar-row')) r.hidden = r !== row;
+    if (this.native) {
+      // The native bar stands in for the main row; the page's own rows need their background.
+      this.el.classList.toggle('see-through', row === this.main);
+      this.report({ shown: row === this.main });
+    }
   }
 
   setCurrent(page: number): void {
@@ -102,9 +155,11 @@ export class PageBar {
     this.current = page;
     this.thumbs[page]?.classList.add('current');
     this.indicator.textContent = `${page + 1} / ${this.host.pageCount}`;
+    if (page !== this.nativeState.page) this.report({ page });
   }
 
   showSearchState(state: SearchState): void {
+    this.report({ query: state.query, current: state.current, total: state.total, searching: state.searching });
     this.searchCount.textContent =
       state.total > 0 ? `${state.current + 1}/${state.total}`
       : state.query === '' ? ''
@@ -194,3 +249,10 @@ const ICON_UP = 'M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z';
 const ICON_DOWN = 'M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z';
 export const ICON_EDIT = 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z';
 const ICON_CLOSE = 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z';
+
+declare global {
+  interface Window {
+    /** The native bottom bar was used: 'pages', 'find' (text), 'step' (1 or -1), 'clear', 'edit'. */
+    officePageBar?: (action: string, arg?: string | number) => void;
+  }
+}

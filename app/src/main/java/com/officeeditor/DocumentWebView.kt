@@ -183,6 +183,12 @@ interface EditorHost {
     fun printFailed() = Unit
     /** A presentation is shown full screen (or no longer is). */
     fun setPresenting(on: Boolean) = Unit
+    /** A tap on the document hid the viewer's bars: hide the top bar too (or show it again). */
+    fun setBarsHidden(on: Boolean) = Unit
+    /** Room the page keeps at its top for a top bar floating over it, in CSS px. */
+    fun topInset(): Float = 0f
+    /** What the native bottom bar of the PDF and Word viewers shows, as JSON (PageBar.kt). */
+    fun setPageBar(json: String) = Unit
     /**
      * The page asked for a picture: show the system's picker and call [done] with the chosen
      * one (null when cancelled). False if this screen can't pick (the page then gets nothing).
@@ -234,4 +240,13 @@ private class Bridge(
 
     @JavascriptInterface
     fun setPresenting(on: Boolean) = host.setPresenting(on)
+
+    @JavascriptInterface
+    fun setBarsHidden(on: Boolean) = host.setBarsHidden(on)
+
+    @JavascriptInterface
+    fun getTopInset(): Float = host.topInset()
+
+    @JavascriptInterface
+    fun setPageBar(json: String) = host.setPageBar(json)
 }

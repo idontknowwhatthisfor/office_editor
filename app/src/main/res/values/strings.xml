@@ -41,4 +41,12 @@
     <string name="about_privacy">Works offline. No internet access, no accounts, no analytics: your files never leave this device unless you share them.</string>
     <string name="open_source_licences">Open-source licences</string>
     <string name="open_source_licences_body">This app is built with the following open-source software. Tap one to read its licence.</string>
+    <string name="pages">Pages</string>
+    <string name="search">Search</string>
+    <string name="search_hint">Search in document</string>
+    <string name="previous_result">Previous result</string>
+    <string name="next_result">Next result</string>
+    <string name="close">Close</string>
+    <string name="no_results">No results</string>
+    <string name="edit">Edit</string>
 </resources>

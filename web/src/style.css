@@ -6,6 +6,9 @@
   --text-muted: #5b5e66;
   --border: #d5d8de;
   --accent: #2f5bd7;
+  /* Room for the shell's top bar, which floats over the PDF, Word and PowerPoint viewers
+     (immersive.ts). */
+  --oe-top: 0px;
   font-family: system-ui, Roboto, sans-serif;
   font-size: 16px;
 }
@@ -25,6 +28,15 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Search results and focused text stay clear of the floating top bar. */
+  scroll-padding-top: var(--oe-top);
+}
+
+body {
+  padding-top: var(--oe-top);
+}
+
 html,
 body {
   margin: 0;
@@ -35,7 +47,7 @@ body {
 
 .message {
   position: fixed;
-  inset: 0;
+  inset: var(--oe-top) 0 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -81,4 +93,31 @@ body {
 
 :where(.oe-overlay) > * {
   pointer-events: auto;
+}
+
+/* A tap on the document slides the viewers' bars away (immersive.ts); the shell's top bar slides
+   up at the same time and speed (ViewerActivity's BAR_SLIDE_MS). `translate` composes with the
+   transform pagebar.ts pins the bar with. Hidden bars become invisible once out of sight. */
+.pagebar,
+.pptx-bottom {
+  transition: translate 200ms ease, visibility 0s;
+}
+
+.pptx-count,
+.pptx-notice {
+  transition: opacity 200ms ease, visibility 0s;
+}
+
+.bars-hidden .pagebar,
+.bars-hidden .pptx-bottom {
+  translate: 0 100%;
+  visibility: hidden;
+  transition: translate 200ms ease, visibility 0s 200ms;
+}
+
+.bars-hidden .pptx-count,
+.bars-hidden .pptx-notice {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 200ms ease, visibility 0s 200ms;
 }

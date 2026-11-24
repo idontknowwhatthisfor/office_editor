@@ -11,9 +11,10 @@ in the web app ([`web/src/`](../../../../../../web/src/README.md)).
 | File | What it does |
 | --- | --- |
 | `MainActivity.kt` | Home: recent files, "Open file" (system picker), "+" → new document / spreadsheet (the save picker creates the file, it is filled from a blank template in `res/raw` and opened with `EXTRA_START_EDITING`). |
-| `ViewerActivity.kt` | One document. Also the target of "Open with" (`ACTION_VIEW`) and share-to (`ACTION_SEND`). Native top bar (Save, share, ⋮ menu), save dialogs, Export as PDF, Present mode, the photo picker. Implements `EditorHost`. |
+| `ViewerActivity.kt` | One document. Also the target of "Open with" (`ACTION_VIEW`) and share-to (`ACTION_SEND`). Native top bar (Save, share, ⋮ menu; floats over PDF, Word and PowerPoint pages and slides away on a tap), the PDF and Word bottom bar (`PageBar.kt`), save dialogs, Export as PDF, Present mode, the photo picker. Implements `EditorHost`. |
 | `DocumentWebView.kt` | `createDocumentWebView()`: WebView setup, serving of app assets and the document's bytes, the `OfficeBridge` JS interface, and the `EditorHost` interface the bridge calls back into. |
 | `Saving.kt` | `SaveReceiver` (receives an edited file in base64 chunks into a temp file and checks its signature), `canOverwrite`, `overwrite` (backs up the original, restores it on failure), `writeCopy`, `copyName`. |
+| `PageBar.kt` | The PDF and Word viewers' bottom bar (thumbnails, page indicator, search, edit), drawn natively over the bottom of the WebView so it stays put while the page is pinch-zoomed. The page sends what it shows (`setPageBar`, `PageBarState`); taps go back as `window.officePageBar(action, arg)`. Hidden while the page shows its own toolbar (edit mode). |
 | `Printing.kt` | `printWebView()`: opens Android's print dialog for a WebView, picking the standard paper size nearest the page. |
 | `Documents.kt` | `DocFormat` (PDF/DOCX/XLSX/PPTX, detection by MIME type then extension), `DocumentInfo`, `resolveDocument()`. |
 | `RecentFiles.kt` | The recent list (SharedPreferences, max 30). Keeps a persisted URI permission where possible, otherwise a private copy in `files/recent/` (files up to 50 MB). |
@@ -30,7 +31,9 @@ in the web app ([`web/src/`](../../../../../../web/src/README.md)).
   start itself but reads to the end of the stream it is given, so the stream is cut off at the
   range end. Read that comment before changing how documents are served.
 - **Bridge** (`window.OfficeBridge`): `getDocument()`, `setDirty()`, `beginSave()` /
-  `writeChunk()` / `finishSave()`, `printReady()` / `printFailed()`, `setPresenting()`. Bridge
+  `writeChunk()` / `finishSave()`, `printReady()` / `printFailed()`, `setPresenting()`, `setBarsHidden()` (a tap
+  on the document slides the top bar away and hides the status bar), `getTopInset()` (the
+  height of the top bar, which floats over PDF, Word and PowerPoint pages). Bridge
   methods run on a WebView thread, not the UI thread.
 - **Shell → page**: `window.officeSave(mode)`, `window.officeSaveResult(...)`,
   `window.officeEndPresentation()`, via `evaluateJavascript`.

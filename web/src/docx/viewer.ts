@@ -5,6 +5,7 @@ import JSZip from 'jszip';
 import { t } from '../i18n';
 import { showMessage } from '../message';
 import { PageBar, THUMB_WIDTH } from '../pagebar';
+import { toggleBarsOnTap, topInset } from '../immersive';
 import { prepareCharts } from './charts';
 import { paginate } from './paginate';
 import { DocxSearch } from './search';
@@ -28,12 +29,14 @@ export async function openDocx(
   const { view, wrapper } = pages;
 
   let editing = false;
+  let pageBar: PageBar | undefined;
   const edit = async () => {
     if (editing) return;
     editing = true;
     const { startDocxEditing } = await import('./editor');
     try {
       if (!(await startDocxEditing(root, data, fileName))) editing = false;
+      else pageBar?.detach(); // the editor has its own toolbar
     } catch (e) {
       console.error('could not start editing', e);
       editing = false;
@@ -55,7 +58,8 @@ export async function openDocx(
     view.style.height = `${pagesHeight * scale}px`;
   };
   fit();
-  addPageBar(root, view, [...wrapper.children] as HTMLElement[], pageWidth, edit);
+  pageBar = addPageBar(root, view, [...wrapper.children] as HTMLElement[], pageWidth, edit);
+  toggleBarsOnTap(view, () => !editing && view.isConnected);
   if (startEditing) await edit();
   let width = document.documentElement.clientWidth;
   window.addEventListener('resize', () => {
@@ -161,10 +165,10 @@ export async function fontsLoaded(view: HTMLElement): Promise<void> {
 }
 
 /** The PDF viewer's bottom bar, over the Word pages. */
-function addPageBar(root: HTMLElement, view: HTMLElement, pages: HTMLElement[], pageWidth: number, edit: () => void): void {
+function addPageBar(root: HTMLElement, view: HTMLElement, pages: HTMLElement[], pageWidth: number, edit: () => void): PageBar {
   const goToPage = (index: number) => {
     const top = pages[index].getBoundingClientRect().top;
-    window.scrollBy(0, top - (window.visualViewport?.offsetTop ?? 0) - GUTTER);
+    window.scrollBy(0, top - (window.visualViewport?.offsetTop ?? 0) - topInset() - GUTTER);
   };
   let current = 0;
   const search = new DocxSearch(pages, () => current, (state) => bar.showSearchState(state));
@@ -217,6 +221,7 @@ function addPageBar(root: HTMLElement, view: HTMLElement, pages: HTMLElement[], 
   window.addEventListener('scroll', schedule, { passive: true });
   window.visualViewport?.addEventListener('scroll', schedule);
   update();
+  return bar;
 }
 
 /**

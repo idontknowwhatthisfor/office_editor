@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { t } from '../i18n';
 import { overlay } from '../overlay';
+import { topInset } from '../immersive';
 import { toast } from '../ui';
 
 // Pictures in the Word editor: insert, select, move, resize, crop and delete.
@@ -298,7 +299,7 @@ export class PictureTool {
     const left = Math.min(Math.max(4, r.x + r.width / 2 - bar.width / 2), width - bar.width - 4);
     const above = r.y - bar.height - 14;
     this.bar.style.left = `${left}px`;
-    this.bar.style.top = `${above >= 8 ? above : r.y + r.height + 14}px`;
+    this.bar.style.top = `${above >= topInset() + 8 ? above : r.y + r.height + 14}px`;
   }
 
   /**
@@ -1019,8 +1020,9 @@ function exifOrientation(b: Uint8Array): number {
 function showOnScreen(e: HTMLElement): void {
   const r = e.getBoundingClientRect();
   const bottom = window.innerHeight - 72;
-  if (r.top >= 64 && r.bottom <= bottom) return;
-  window.scrollBy({ top: r.top - Math.max(64, (bottom - r.height) / 2), behavior: 'smooth' });
+  const top = topInset() + 64;
+  if (r.top >= top && r.bottom <= bottom) return;
+  window.scrollBy({ top: r.top - Math.max(top, (bottom - r.height) / 2), behavior: 'smooth' });
 }
 
 function setRect(e: HTMLElement, r: DOMRect): void {

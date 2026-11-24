@@ -31,6 +31,12 @@ declare global {
       printFailed?(): void;
       /** A presentation is shown full screen (the shell hides its bars and turns landscape). */
       setPresenting?(on: boolean): void;
+      /** A tap hid the viewer's bars (immersive.ts): the shell hides its top bar too, or shows it again. */
+      setBarsHidden?(on: boolean): void;
+      /** Height of the shell's top bar floating over the page, in CSS px. */
+      getTopInset?(): number;
+      /** What the shell's native bottom bar shows: a NativeBarState as JSON (pagebar.ts). */
+      setPageBar?(json: string): void;
     };
   }
 }

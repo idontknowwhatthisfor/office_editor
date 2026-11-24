@@ -3,6 +3,7 @@ import './pptx.css';
 import { t } from '../i18n';
 import { showMessage } from '../message';
 import { ICON_EDIT, iconButton } from '../pagebar';
+import { toggleBarsOnTap } from '../immersive';
 import { Deck } from './deck';
 import type { PptxEditor } from './editor';
 import { renderSlide, type RenderedSlide } from './render';
@@ -423,6 +424,8 @@ class PptxViewer {
       const back = e.clientX < this.pager.clientWidth / 3;
       this.go(Math.min(this.pages.length - 1, Math.max(0, this.current + (back ? -1 : 1))));
     });
+    // Otherwise a single tap hides the bars (immersive.ts).
+    toggleBarsOnTap(this.pager, () => !this.presenting && !this.editor && !this.startingEdit);
     document.addEventListener('fullscreenchange', () => {
       if (!document.fullscreenElement && this.presenting && !window.OfficeBridge?.setPresenting) this.stopPresenting();
     });

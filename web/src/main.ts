@@ -2,6 +2,7 @@ import './style.css';
 import { nativeDocument, type DocFormat, type DocInfo } from './bridge';
 import { t } from './i18n';
 import { showMessage } from './message';
+import './immersive';
 
 const app = document.getElementById('app')!;
 

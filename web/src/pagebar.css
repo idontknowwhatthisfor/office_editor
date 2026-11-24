@@ -82,6 +82,24 @@
   white-space: nowrap;
 }
 
+/* In the app the shell draws the main row and the search row (pagebar.ts): the main row is an
+   invisible spacer under the native bar, and only the thumbnails above it are the page's. */
+.pagebar.see-through {
+  background: none;
+  border-top: 0;
+  pointer-events: none;
+}
+
+.pagebar.see-through .pagebar-thumbs {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  pointer-events: auto;
+}
+
+.pagebar-spacer {
+  visibility: hidden;
+}
+
 /* ---- page thumbnails ---- */
 
 .pagebar-thumbs {

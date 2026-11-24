@@ -1,5 +1,6 @@
 import { t } from '../i18n';
 import { overlay } from '../overlay';
+import { topInset } from '../immersive';
 import { DEFAULT_STYLE, type Edit, type PageSpace, type Rgb } from './edits';
 import { openStylePanel } from './style';
 
@@ -169,7 +170,7 @@ export class TextBoxes {
     const left = Math.min(Math.max(4, r.x + r.width / 2 - w / 2), width - w - 4);
     const above = r.y - h - 12;
     this.bar.style.left = `${left}px`;
-    this.bar.style.top = `${above >= 8 ? above : r.bottom + 12}px`;
+    this.bar.style.top = `${above >= topInset() + 8 ? above : r.bottom + 12}px`;
   }
 
   // ---------------------------------------------------------------- move and scale

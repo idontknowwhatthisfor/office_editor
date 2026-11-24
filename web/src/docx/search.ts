@@ -1,4 +1,5 @@
 import type { SearchState } from '../pagebar';
+import { topInset } from '../immersive';
 
 interface Match {
   page: number;
@@ -100,8 +101,8 @@ export class DocxSearch {
     const viewport = window.visualViewport;
     const top = viewport?.offsetTop ?? 0;
     const height = viewport?.height ?? window.innerHeight;
-    if (rect.top < top + 48 || rect.bottom > top + height - 120) {
-      window.scrollBy(0, rect.top - top - height / 3);
+    if (rect.top < top + topInset() + 48 || rect.bottom > top + height - 120) {
+      window.scrollBy(0, rect.top - top - topInset() - (height - topInset()) / 3);
     }
   }
 

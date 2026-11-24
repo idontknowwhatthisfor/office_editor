@@ -23,7 +23,7 @@
 /* A popover above the edit bar, centred, like the bar's buttons on a wide screen. */
 .pdf-style-frame {
   position: fixed;
-  top: calc(env(safe-area-inset-top) + 8px);
+  top: calc(env(safe-area-inset-top) + var(--oe-top) + 8px);
   bottom: calc(env(safe-area-inset-bottom) + 64px);
   left: 0;
   right: 0;

@@ -4,6 +4,7 @@ import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist/lega
 import { t } from '../i18n';
 import { showMessage } from '../message';
 import { PageBar, THUMB_WIDTH } from '../pagebar';
+import { toggleBarsOnTap, topInset } from '../immersive';
 import { PdfEditor } from './editor';
 import { PdfSearch, type TextContent } from './search';
 
@@ -159,6 +160,7 @@ class PdfViewer {
       [this.editor.row],
     );
     root.replaceChildren(this.pagesEl, this.bar.el);
+    toggleBarsOnTap(this.pagesEl, () => !this.editor.active);
     this.layout();
 
     const observer = new IntersectionObserver(
@@ -276,7 +278,7 @@ class PdfViewer {
 
   private goToPage(index: number): void {
     const top = this.pages[index].el.getBoundingClientRect().top;
-    window.scrollBy(0, top - (window.visualViewport?.offsetTop ?? 0) - PAGE_MARGIN);
+    window.scrollBy(0, top - (window.visualViewport?.offsetTop ?? 0) - topInset() - PAGE_MARGIN);
   }
 
   // ---- rendering ----

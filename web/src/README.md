@@ -18,7 +18,8 @@ document is open, then a viewer/editor per format, plus the pieces they share.
 | `bridge.ts` | Types for `window.OfficeBridge` and `nativeDocument()`. The bridge is absent in a desktop browser. |
 | `save.ts` | Saving, shared by the editors: `registerEditor`, `setDirty`, and streaming the built file to the shell in base64 chunks. Offers a download when there is no shell. |
 | `print.ts` | `preparePrint()`: lays a Word/Excel/PowerPoint file out for paper ("Export as PDF"). |
-| `pagebar.ts` | The bottom bar of the PDF and Word viewers: page indicator, thumbnails, search, edit button. Also `iconButton`. |
+| `immersive.ts` | A single tap on a PDF, Word or PowerPoint document (not editing or presenting) slides the bottom bar down and, through `OfficeBridge.setBarsHidden`, the shell's top bar up (and hides the status bar); another tap brings them back. A double tap (zoom) leaves them alone. The top bar floats over these viewers: `--oe-top` / `topInset()` is the room the page keeps for it. |
+| `pagebar.ts` | The bottom bar of the PDF and Word viewers: page indicator, thumbnails, search, edit button. Also `iconButton`. In the app the shell draws the main and search rows natively (`PageBar.kt`; the page reports with `setPageBar` and gets taps through `window.officePageBar`); the page keeps an invisible spacer row, the thumbnail strip and its own rows (the PDF edit toolbar). In a desktop browser it draws them all. |
 | `overlay.ts` | The layer editors' panels, toasts and dialogs live in, counter-scaled so pinch-zoom doesn't magnify them. |
 | `ui.ts` | Dialogs, menus, toast, the font size field (`askFontSize`, `fontSizeField`, `parseFontSize`), and `holdable` (tap vs hold on a button). |
 | `ooxml.ts` | Zip/XML/relationship helpers for Office files (`Package`, `child`, `children`, `first`, `all`, `relAttr`, `relOfType`). |
