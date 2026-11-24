@@ -189,6 +189,8 @@ interface EditorHost {
     fun topInset(): Float = 0f
     /** What the native bottom bar of the PDF and Word viewers shows, as JSON (PageBar.kt). */
     fun setPageBar(json: String) = Unit
+    /** The editor toolbar to draw natively, as JSON; '' for none (MirroredToolbar.kt). */
+    fun setToolbar(json: String) = Unit
     /**
      * The page asked for a picture: show the system's picker and call [done] with the chosen
      * one (null when cancelled). False if this screen can't pick (the page then gets nothing).
@@ -249,4 +251,7 @@ private class Bridge(
 
     @JavascriptInterface
     fun setPageBar(json: String) = host.setPageBar(json)
+
+    @JavascriptInterface
+    fun setToolbar(json: String) = host.setToolbar(json)
 }

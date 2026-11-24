@@ -4,6 +4,7 @@ import { isDirty, registerEditor, setDirty, type SaveResult } from '../save';
 import { fontSizeField, holdable, parseFontSize } from '../ui';
 import { css, editSvg, type ColourTarget, type Edit, type FormValue, type PageSpace, type Rgb } from './edits';
 import { overlay } from '../overlay';
+import { mirrorToolbar } from '../toolbar-mirror';
 import { along, erasePart, eraseWhole, type Point } from './erase';
 import { openStylePanel, readStyle, saveStyle, type StyleTarget } from './style';
 import { TextBoxes, type TextEdit } from './textbox';
@@ -132,6 +133,7 @@ export class PdfEditor {
       onDone();
     });
     this.row.hidden = true;
+    mirrorToolbar(this.row);
     // A finger may lift away from the page it touched (only the first one is captured).
     for (const type of ['pointerup', 'pointercancel'] as const) {
       window.addEventListener(type, (e) => {

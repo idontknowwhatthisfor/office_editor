@@ -101,6 +101,8 @@ class ViewerActivity : ComponentActivity(), EditorHost {
     @Volatile private var topInsetDp = 0f
     /** The PDF and Word viewers' bottom bar, drawn here (PageBar.kt); null until the page sends it. */
     private var pageBar by mutableStateOf<PageBarState?>(null)
+    /** The PDF or Word editor's toolbar, drawn here (MirroredToolbar.kt); null when not editing. */
+    private var toolbar by mutableStateOf<ToolbarState?>(null)
     /** Leave the screen once the save in progress succeeds (the user chose Save on leaving). */
     private var closeAfterSave = false
     private var pendingCopy: File? = null
@@ -239,7 +241,10 @@ class ViewerActivity : ComponentActivity(), EditorHost {
                                 // Floats over the bottom of the page, above the keyboard and the
                                 // navigation bar; slides down with the top bar on a tap.
                                 val bar = pageBar
-                                if (floating && bar != null) AnimatedVisibility(
+                                val tools = toolbar
+                                if (floating && tools != null) {
+                                    MirroredToolbar(tools, ::toolbarAction, Modifier.align(Alignment.BottomCenter))
+                                } else if (floating && bar != null) AnimatedVisibility(
                                     visible = bar.shown && !hideBars && !fullScreen,
                                     modifier = Modifier.align(Alignment.BottomCenter),
                                     enter = slideInVertically(tween(BAR_SLIDE_MS)) { it },
@@ -365,6 +370,16 @@ class ViewerActivity : ComponentActivity(), EditorHost {
     override fun setPageBar(json: String) {
         val state = PageBarState.parse(json) ?: return
         runOnUiThread { pageBar = state }
+    }
+
+    override fun setToolbar(json: String) {
+        val state = ToolbarState.parse(json)
+        runOnUiThread { toolbar = state }
+    }
+
+    /** A tap or hold on the native editor toolbar, replayed on the page's button (toolbar-mirror.ts). */
+    private fun toolbarAction(index: Int, kind: String) {
+        webView?.evaluateJavascript("window.officeToolbar && window.officeToolbar($index, ${JSONObject.quote(kind)})", null)
     }
 
     /** A tap on the native bottom bar, passed on to the page (pagebar.ts). */

@@ -121,7 +121,13 @@ Native Kotlin shell + bundled web viewers in a WebView.
     and search rows are native (`PageBar.kt`, over the bottom of the WebView): a page element
     pinned to the visible area while pinch-zoomed follows the view a frame late, so it lagged
     behind fast pans. The page reports page/search state with `OfficeBridge.setPageBar` and gets
-    taps back through `window.officePageBar`; thumbnails and edit toolbars stay in the page.
+    taps back through `window.officePageBar`; the thumbnail strip stays in the page.
+  - `src/toolbar-mirror.ts` — the PDF and Word editors' toolbars, drawn natively in the app
+    (`MirroredToolbar.kt`) for the same reason: the page describes each button (label, icon
+    paths or letter, active/disabled) with `OfficeBridge.setToolbar` whenever they change, and the
+    shell replays taps and holds on the real buttons (`window.officeToolbar`). The editors build
+    and handle their buttons as before; their rows stay in the page, invisible. Panels, menus and
+    the selection bars of text boxes and pictures are still page elements.
   - `src/immersive.ts` — a single tap on a PDF, Word or PowerPoint page (viewing, not editing)
     slides the bottom bar down and, via `OfficeBridge.setBarsHidden`, the shell's top bar up and
     hides the status bar; the next tap brings them back. In these viewers the top bar floats over

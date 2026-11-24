@@ -144,8 +144,8 @@ export class PageBar {
     this.thumbsEl.classList.remove('open');
     for (const r of this.el.querySelectorAll<HTMLElement>(':scope > .pagebar-row')) r.hidden = r !== row;
     if (this.native) {
-      // The native bar stands in for the main row; the page's own rows need their background.
-      this.el.classList.toggle('see-through', row === this.main);
+      // The native bar stands in for the main row, and the shell draws the edit rows too
+      // (toolbar-mirror.ts), so the bar's own background stays off.
       this.report({ shown: row === this.main });
     }
   }

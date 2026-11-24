@@ -6,6 +6,7 @@ import { registerEditor, setDirty, type SaveResult } from '../save';
 import { fontSizeField, holdable, HOLD_MS, parseFontSize } from '../ui';
 import { openStylePanel, readStyle, saveStyle } from '../pdf/style';
 import { overlay } from '../overlay';
+import { mirrorToolbar } from '../toolbar-mirror';
 import { PictureTool } from './pictures';
 import { fontsLoaded, GUTTER, scaleLineHeights } from './viewer';
 
@@ -172,6 +173,7 @@ class DocxEditor {
     this.root.replaceChildren(this.frame);
     // The toolbar (like the toast, dialogs and panels) stays at normal size on a pinch-zoomed page.
     overlay().append(this.bar);
+    mirrorToolbar(this.bar);
     await fontsLoaded(this.view);
     lineHeights.measure();
     for (const p of this.view.querySelectorAll<HTMLElement>('p[data-p]')) this.original.set(p.dataset.p!, p.outerHTML);

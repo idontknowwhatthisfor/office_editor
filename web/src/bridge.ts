@@ -37,6 +37,8 @@ declare global {
       getTopInset?(): number;
       /** What the shell's native bottom bar shows: a NativeBarState as JSON (pagebar.ts). */
       setPageBar?(json: string): void;
+      /** The editor toolbar the shell draws (toolbar-mirror.ts), as JSON; '' for none. */
+      setToolbar?(json: string): void;
     };
   }
 }

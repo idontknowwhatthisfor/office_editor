@@ -100,6 +100,11 @@
   visibility: hidden;
 }
 
+/* A toolbar the shell draws natively (toolbar-mirror.ts): it keeps its place, unseen. */
+.oe-mirrored {
+  visibility: hidden;
+}
+
 /* ---- page thumbnails ---- */
 
 .pagebar-thumbs {
